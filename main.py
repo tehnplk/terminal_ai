@@ -369,26 +369,42 @@ def select_model_interactive() -> str:
     # Ask to save model to .env
     save_model = Confirm.ask(f"Would you like to save model choice '{model_choice}' to your .env file?", default=True)
     if save_model:
+        env_path = find_external_runtime_file(".env") or default_runtime_file_path(".env")
         # First remove existing OPENROUTER_MODEL lines from .env to avoid duplicates
-        if os.path.exists(".env"):
-            with open(".env", "r") as f:
+        if os.path.exists(env_path):
+            with open(env_path, "r") as f:
                 lines = f.readlines()
-            with open(".env", "w") as f:
+            with open(env_path, "w") as f:
                 for line in lines:
                     if not line.strip().startswith("OPENROUTER_MODEL="):
                         f.write(line)
         # Append new choice
-        with open(".env", "a") as f:
+        with open(env_path, "a") as f:
             f.write(f"\nOPENROUTER_MODEL={model_choice}\n")
-        console.print(f"[green]Saved model choice to .env file.[/green]")
+        console.print(f"[green]Saved model choice to {escape(env_path)}.[/green]")
         
     return model_choice
 
-def get_resource_path(relative_path: str) -> str:
-    """Get absolute path to resource, works for dev and for PyInstaller."""
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+def get_app_dir() -> str:
+    """Returns the directory that owns editable runtime files."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+def find_external_runtime_file(filename: str) -> str | None:
+    """Finds an editable runtime file next to the app first, then in cwd."""
+    candidates = [
+        os.path.join(get_app_dir(), filename),
+        os.path.join(os.getcwd(), filename),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+def default_runtime_file_path(filename: str) -> str:
+    """Returns where newly-created editable runtime files should be written."""
+    return os.path.join(get_app_dir(), filename)
 
 def main():
     parser = argparse.ArgumentParser(description="Terminal AI Agent - A command line assistant using OpenRouter.")
@@ -401,8 +417,10 @@ def main():
     tools.set_auto_approve(auto_approve)
     tools.set_cwd(cwd)
     
-    # Load environment variables from .env
-    load_dotenv()
+    # Load editable environment variables from .env next to the app/exe first.
+    env_path = find_external_runtime_file(".env")
+    if env_path:
+        load_dotenv(env_path)
     
     # Print welcome banner
     console.print()
@@ -423,9 +441,10 @@ def main():
             
         save = Confirm.ask("Would you like to save this key to a .env file?", default=True)
         if save:
-            with open(".env", "a") as f:
+            env_path = default_runtime_file_path(".env")
+            with open(env_path, "a") as f:
                 f.write(f"\nOPENROUTER_API_KEY={api_key}\n")
-            console.print("[green]Saved API key to .env file.[/green]")
+            console.print(f"[green]Saved API key to {escape(env_path)}.[/green]")
             
         os.environ["OPENROUTER_API_KEY"] = api_key
 
@@ -451,25 +470,13 @@ def main():
     shell_info = "cmd.exe" if platform.system() == "Windows" else "sh/bash"
     
     try:
-        # Resolve system_prompt.md path checking order:
-        # 1. Next to the executable/script itself
-        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        local_prompt_path = os.path.join(exe_dir, "system_prompt.md")
-        
-        # 2. In current working directory
-        cwd_prompt_path = os.path.join(os.getcwd(), "system_prompt.md")
-        
-        # 3. Fallback to bundled resource path
-        bundled_prompt_path = get_resource_path("system_prompt.md")
-        
-        prompt_path = None
-        if os.path.exists(local_prompt_path):
-            prompt_path = local_prompt_path
-        elif os.path.exists(cwd_prompt_path):
-            prompt_path = cwd_prompt_path
-        else:
-            prompt_path = bundled_prompt_path
-            
+        # system_prompt.md is intentionally external/editable, not bundled into the exe.
+        prompt_path = find_external_runtime_file("system_prompt.md")
+        if not prompt_path:
+            raise FileNotFoundError(
+                f"system_prompt.md not found next to app ({get_app_dir()}) or cwd ({os.getcwd()})"
+            )
+
         with open(prompt_path, "r", encoding="utf-8") as f:
             prompt_template = f.read()
         system_instruction = prompt_template.format(os_info=os_info, shell_info=shell_info)

@@ -14,6 +14,7 @@ wheels/
 build/
 dist/
 *.spec
+!TerminalAI.spec
 
 # Playwright CLI local session/data folder
 .playwright-cli/
