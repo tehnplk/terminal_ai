@@ -103,7 +103,7 @@ class WebTextParser(HTMLParser):
             self.text_parts.append(text)
 
 
-def search_web(query):
+def search_with_urllib(query):
     url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
     req = urllib.request.Request(
         url,
@@ -128,16 +128,113 @@ def search_web(query):
         return "\n".join(output)
 
 
+def search_with_playwright(query):
+    session = "search_session"
+    url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
+    try:
+        # Try in headless mode first
+        subprocess.run(["playwright-cli", f"-s={session}", "open", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+        
+        # Check if blocked
+        res = subprocess.run(["playwright-cli", f"-s={session}", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+        stdout = res.stdout
+        start = stdout.find('{')
+        end = stdout.rfind('}')
+        is_blocked = False
+        if start != -1 and end != -1:
+            json_str = stdout[start:end+1]
+            data = json.loads(json_str)
+            inner_text = data.get("result", "")
+            if isinstance(inner_text, str):
+                if inner_text.startswith('"') and inner_text.endswith('"'):
+                    inner_text = json.loads(inner_text)
+                if "403 - Forbidden" in inner_text or "automated queries" in inner_text or "unusual traffic" in inner_text or "bots use" in inner_text:
+                    is_blocked = True
+        else:
+            is_blocked = True
+            
+        if is_blocked:
+            # Close browser
+            subprocess.run(["playwright-cli", f"-s={session}", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', shell=True)
+            # Reopen in headed mode (bypasses bot challenges)
+            subprocess.run(["playwright-cli", f"-s={session}", "open", url, "--headed"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+            
+        # Extract search results
+        js_code = (
+            "Array.from(document.querySelectorAll('li')).filter(function(li){"
+            "var cls=li.className||'';"
+            "return cls.indexOf('r')===0;"
+            "}).map(function(li){"
+            "var a=li.querySelector('a.title');"
+            "var p=li.querySelector('p.s');"
+            "return {title:a?a.innerText:'',url:a?a.href:'',snippet:p?p.innerText:''};"
+            "})"
+        )
+        cmd = f'playwright-cli -s={session} eval "{js_code}" --json'
+        res = subprocess.run(
+            cmd,
+            capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True
+        )
+        
+        # Close browser
+        subprocess.run(["playwright-cli", f"-s={session}", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', shell=True)
+        
+        stdout = res.stdout
+        start = stdout.find('{')
+        end = stdout.rfind('}')
+        if start != -1 and end != -1:
+            json_str = stdout[start:end+1]
+            data = json.loads(json_str)
+            results = data.get("result", [])
+            if isinstance(results, str) and results.startswith("[") and results.endswith("]"):
+                results = json.loads(results)
+                
+            if isinstance(results, list) and results:
+                output = []
+                for i, res_item in enumerate(results, 1):
+                    title = res_item.get('title', '').strip()
+                    url_val = res_item.get('url', '').strip()
+                    snippet = res_item.get('snippet', '').strip()
+                    if title and url_val:
+                        output.append(f"{i}. Title: {title}")
+                        output.append(f"   URL: {url_val}")
+                        output.append(f"   Snippet: {snippet}")
+                        output.append("-" * 40)
+                if output:
+                    return "\n".join(output)
+                    
+        raise Exception("No search results returned or parsed successfully.")
+    except Exception as e:
+        subprocess.run(["playwright-cli", f"-s={session}", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', shell=True)
+        raise e
+
+
+def search_web(query):
+    # Try playwright-cli first
+    try:
+        results = search_with_playwright(query)
+        if results and results.strip():
+            return results
+    except Exception as e:
+        pass
+        
+    # Fallback to urllib search
+    try:
+        return search_with_urllib(query)
+    except Exception as e:
+        return f"Error performing web search: {str(e)}"
+
+
 def fetch_with_playwright(url):
     try:
         # Open URL
-        subprocess.run(["playwright-cli", "open", url], capture_output=True, text=True, check=True, shell=True)
+        subprocess.run(["playwright-cli", "open", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
         
         # Eval innerText with --json
-        res = subprocess.run(["playwright-cli", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, check=True, shell=True)
+        res = subprocess.run(["playwright-cli", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
         
         # Close browser
-        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, check=True, shell=True)
+        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
         
         stdout = res.stdout
         start = stdout.find('{')
@@ -156,7 +253,7 @@ def fetch_with_playwright(url):
             
     except Exception as e:
         # Ensure browser is closed on error
-        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, shell=True)
+        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', shell=True)
         raise e
 
 
@@ -186,17 +283,28 @@ def fetch_with_urllib(url):
 
 
 def fetch_web(url):
-    # Try playwright-cli first
+    # Try urllib first for high performance
+    try:
+        text = fetch_with_urllib(url)
+        # Check if we got substantial content (not a tiny block/stub page)
+        if len(text.strip()) > 300:
+            return text
+    except Exception as e:
+        pass
+
+    # Fallback to playwright-cli
     try:
         text = fetch_with_playwright(url)
         if text.strip():
             return text
     except Exception as e:
-        # Fallback to urllib
         pass
 
-    # Fallback to urllib
-    return fetch_with_urllib(url)
+    # Final fallback attempt with urllib
+    try:
+        return fetch_with_urllib(url)
+    except Exception as e:
+        return f"Error fetching page content: {str(e)}"
 
 
 def main():

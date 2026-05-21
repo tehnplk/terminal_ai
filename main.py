@@ -9,7 +9,10 @@ import signal
 import platform
 from dotenv import load_dotenv
 from openai import OpenAI
+import docx
+import openpyxl
 import questionary
+import web_cli
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
@@ -656,12 +659,283 @@ def edit_text_file(filename: str, find_str: str = None, replace_str: str = None,
         console.print(f"[red]❌ Error editing file: {escape(str(e))}[/red]")
         return f"Error editing file '{filename}': {str(e)}"
 
+def create_docx_file(filename: str, content: list) -> str:
+    """
+    Creates a Microsoft Word (.docx) document containing paragraphs, headings, lists, and tables.
+    
+    Args:
+        filename: The output filename/path (relative to current working directory).
+        content: A list of content blocks. Each block is a dictionary:
+                 - Heading: {"type": "heading", "text": "Heading text", "level": 1}
+                 - Paragraph: {"type": "paragraph", "text": "Paragraph text"}
+                 - Bullet List: {"type": "list_bullet", "text": "Item text"}
+                 - Numbered List: {"type": "list_number", "text": "Item text"}
+                 - Table: {"type": "table", "table_data": [["Col 1", "Col 2"], ["Val 1", "Val 2"]]}
+    """
+    global cwd
+    try:
+        # Resolve full path relative to tracking cwd
+        filepath = os.path.abspath(os.path.join(cwd, filename))
+        
+        # Verify extension is docx
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext != '.docx':
+            return "Error: Output filename must have a '.docx' extension."
+            
+        # 1. Print Proposed File Creation Panel
+        console.print()
+        preview = f"Word document creation with {len(content)} content blocks."
+        console.print(Panel(
+            preview,
+            title=f"[bold yellow]📝 Proposed DOCX Creation: {escape(filename)}[/bold yellow]",
+            subtitle=f"[dim]CWD: {escape(cwd)}[/dim]",
+            border_style="yellow",
+            expand=False
+        ))
+        
+        # 2. Auto-approve since it's non-destructive
+        console.print(f"[yellow]Auto-approving file write (non-destructive): {escape(filename)}[/yellow]")
+        
+        # Ensure parent directories exist
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        # Generate docx
+        doc = docx.Document()
+        for idx, block in enumerate(content):
+            if not isinstance(block, dict):
+                continue
+            b_type = block.get("type", "paragraph")
+            b_text = block.get("text", "")
+            
+            if b_type == "heading":
+                level = block.get("level", 1)
+                doc.add_heading(b_text, level=level)
+            elif b_type == "paragraph":
+                doc.add_paragraph(b_text)
+            elif b_type == "list_bullet":
+                doc.add_paragraph(b_text, style='List Bullet')
+            elif b_type == "list_number":
+                doc.add_paragraph(b_text, style='List Number')
+            elif b_type == "table":
+                table_data = block.get("table_data", [])
+                if table_data and isinstance(table_data, list):
+                    rows = len(table_data)
+                    cols = len(table_data[0]) if rows > 0 else 0
+                    if rows > 0 and cols > 0:
+                        table = doc.add_table(rows=rows, cols=cols)
+                        for r_idx, row in enumerate(table_data):
+                            for c_idx, val in enumerate(row):
+                                if c_idx < len(table.columns):
+                                    table.cell(r_idx, c_idx).text = str(val)
+            else:
+                # Fallback to paragraph for safety
+                doc.add_paragraph(str(block))
+                
+        doc.save(filepath)
+        
+        console.print(f"[green]✓ Successfully wrote file: {escape(filename)}[/green]")
+        return f"Success: Word document '{filename}' was successfully created."
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error creating docx file: {escape(str(e))}[/red]")
+        return f"Error creating docx file '{filename}': {str(e)}"
+
+def create_xlsx_file(filename: str, sheets: dict) -> str:
+    """
+    Creates a Microsoft Excel (.xlsx) workbook with one or more sheets containing tabular data.
+    
+    Args:
+        filename: The output filename/path (relative to current working directory).
+        sheets: A dictionary where keys are sheet names and values are 2D arrays (lists of lists) of data.
+    """
+    global cwd
+    try:
+        # Resolve full path relative to tracking cwd
+        filepath = os.path.abspath(os.path.join(cwd, filename))
+        
+        # Verify extension is xlsx
+        ext = os.path.splitext(filepath)[1].lower()
+        if ext != '.xlsx':
+            return "Error: Output filename must have a '.xlsx' extension."
+            
+        # 1. Print Proposed File Creation Panel
+        console.print()
+        preview = f"Excel workbook creation with {len(sheets)} sheet(s)."
+        console.print(Panel(
+            preview,
+            title=f"[bold yellow]📝 Proposed XLSX Creation: {escape(filename)}[/bold yellow]",
+            subtitle=f"[dim]CWD: {escape(cwd)}[/dim]",
+            border_style="yellow",
+            expand=False
+        ))
+        
+        # 2. Auto-approve since it's non-destructive
+        console.print(f"[yellow]Auto-approving file write (non-destructive): {escape(filename)}[/yellow]")
+        
+        # Ensure parent directories exist
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        # Generate xlsx
+        wb = openpyxl.Workbook()
+        # Remove default sheet
+        default_sheet = wb.active
+        wb.remove(default_sheet)
+        
+        for sheet_name, data in sheets.items():
+            ws = wb.create_sheet(title=sheet_name)
+            if isinstance(data, list):
+                for row in data:
+                    if isinstance(row, list):
+                        ws.append(row)
+                    else:
+                        ws.append([row])
+            else:
+                ws.append([str(data)])
+                
+        # If no sheets were actually created, add a default one back
+        if not wb.sheetnames:
+            wb.create_sheet(title="Sheet")
+            
+        wb.save(filepath)
+        
+        console.print(f"[green]✓ Successfully wrote file: {escape(filename)}[/green]")
+        return f"Success: Excel workbook '{filename}' was successfully created."
+        
+    except Exception as e:
+        console.print(f"[red]❌ Error creating xlsx file: {escape(str(e))}[/red]")
+        return f"Error creating xlsx file '{filename}': {str(e)}"
+
+def get_latest_snapshot_content() -> str:
+    """Reads the latest .yml snapshot file in .playwright-cli/ and returns its content."""
+    dir_path = os.path.join(os.getcwd(), ".playwright-cli")
+    if not os.path.exists(dir_path):
+        return "Error: No snapshot directory found. You may need to open a page first."
+    try:
+        files = [f for f in os.listdir(dir_path) if f.startswith("page-") and f.endswith(".yml")]
+        if not files:
+            return "Error: No snapshots found. The page might not have loaded successfully."
+        # Sort alphabetically (chronological by timestamp)
+        latest_file = sorted(files)[-1]
+        filepath = os.path.join(dir_path, latest_file)
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return f"### Current Page Snapshot ({latest_file}):\n\n```yaml\n{content}\n```"
+    except Exception as e:
+        return f"Error reading latest snapshot: {str(e)}"
+
+def web_search(query: str) -> str:
+    """
+    Searches the web using Mojeek via the web_cli helper.
+    
+    Args:
+        query: The search query.
+    """
+    console.print(f"\n[bold yellow]🔍 Web Search:[/bold yellow] {escape(query)}")
+    try:
+        return web_cli.search_web(query)
+    except Exception as e:
+        return f"Error running search: {str(e)}"
+
+def web_fetch(url: str) -> str:
+    """
+    Fetches the clean text content of a web page using web_cli helper.
+    
+    Args:
+        url: The web page URL.
+    """
+    console.print(f"\n[bold yellow]🌐 Web Fetch:[/bold yellow] {escape(url)}")
+    try:
+        return web_cli.fetch_web(url)
+    except Exception as e:
+        return f"Error running fetch: {str(e)}"
+
+def web_browser_open(url: str) -> str:
+    """
+    Opens a URL in a browser session using playwright-cli.
+    
+    Args:
+        url: The URL to open.
+    """
+    console.print(f"\n[bold yellow]🖥️ Opening Browser:[/bold yellow] {escape(url)}")
+    try:
+        result = subprocess.run(
+            ["playwright-cli", "open", url],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            shell=True,
+            cwd=cwd
+        )
+        if result.returncode != 0:
+            return f"Failed to open browser (Exit Code {result.returncode}):\n{result.stderr}\n{result.stdout}"
+        return get_latest_snapshot_content()
+    except Exception as e:
+        return f"Error opening browser: {str(e)}"
+
+def web_browser_action(action: str, target: str = None, text: str = None) -> str:
+    """
+    Executes an action in the active browser session.
+    
+    Args:
+        action: The action type (e.g. click, fill, type, press, select, hover, reload, go-back, go-forward).
+        target: Optional element reference (e.g., e1, e2) or key name (e.g., Enter).
+        text: Optional text input value (e.g. for fill/type).
+    """
+    console.print(f"\n[bold yellow]🖥️ Browser Action:[/bold yellow] {action} target={target} text={text}")
+    cmd_args = ["playwright-cli", action]
+    if target is not None:
+        cmd_args.append(target)
+    if text is not None:
+        cmd_args.append(text)
+    try:
+        result = subprocess.run(
+            cmd_args,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            shell=True,
+            cwd=cwd
+        )
+        if result.returncode != 0:
+            return f"Action failed (Exit Code {result.returncode}):\n{result.stderr}\n{result.stdout}"
+        return get_latest_snapshot_content()
+    except Exception as e:
+        return f"Error performing browser action: {str(e)}"
+
+def web_browser_close() -> str:
+    """Closes the active browser session."""
+    console.print("\n[bold yellow]🖥️ Closing Browser[/bold yellow]")
+    try:
+        result = subprocess.run(
+            ["playwright-cli", "close"],
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            shell=True,
+            cwd=cwd
+        )
+        if result.returncode != 0:
+            return f"Failed to close browser (Exit Code {result.returncode}):\n{result.stderr}"
+        return "Success: Browser session closed successfully."
+    except Exception as e:
+        return f"Error closing browser: {str(e)}"
+
 # Available functions for the agent loop mapping
 available_functions = {
     "execute_terminal_command": execute_terminal_command,
     "read_text_file": read_text_file,
     "write_text_file": write_text_file,
     "edit_text_file": edit_text_file,
+    "web_search": web_search,
+    "web_fetch": web_fetch,
+    "web_browser_open": web_browser_open,
+    "web_browser_action": web_browser_action,
+    "web_browser_close": web_browser_close,
+    "create_docx_file": create_docx_file,
+    "create_xlsx_file": create_xlsx_file,
 }
 
 # OpenAI/OpenRouter compatible tools schema definition
@@ -761,6 +1035,161 @@ tools_schema = [
                 "required": ["filename"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Searches the web for a given query and returns search results (titles, URLs, snippets). Uses Mojeek.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query string."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_fetch",
+            "description": "Fetches clean, readable text content from a URL.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_browser_open",
+            "description": "Opens a URL in a browser session and returns the structured page snapshot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to open."
+                    }
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_browser_action",
+            "description": "Performs an interactive action (click, fill, type, press, select, hover, reload, go-back, go-forward) in the active browser session and returns the updated snapshot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "description": "The action type (click, fill, type, press, select, hover, reload, go-back, go-forward)."
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Optional element reference (e.g. e1, e2) or key name (e.g. Enter)."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Optional text input value (required for fill/type)."
+                    }
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_browser_close",
+            "description": "Closes the active browser session.",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_docx_file",
+            "description": "Creates a Microsoft Word (.docx) document containing headings, paragraphs, lists, and tables.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "The output filename or path (relative to the current working directory, e.g., 'report.docx')."
+                    },
+                    "content": {
+                        "type": "array",
+                        "description": "A list of content blocks to add to the document.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["heading", "paragraph", "list_bullet", "list_number", "table"],
+                                    "description": "The type of content block."
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": "The text content (for headings, paragraphs, and list items)."
+                                },
+                                "level": {
+                                    "type": "integer",
+                                    "description": "The heading level (required/used only when type is 'heading', e.g., 1 for title/main heading, 2 for subheading)."
+                                },
+                                "table_data": {
+                                    "type": "array",
+                                    "description": "A 2D array representing table cells (required/used only when type is 'table').",
+                                    "items": {
+                                        "type": "array"
+                                    }
+                                }
+                            },
+                            "required": ["type"]
+                        }
+                    }
+                },
+                "required": ["filename", "content"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_xlsx_file",
+            "description": "Creates a Microsoft Excel (.xlsx) workbook with one or more sheets containing tabular data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "description": "The output filename or path (relative to the current working directory, e.g., 'sales.xlsx')."
+                    },
+                    "sheets": {
+                        "type": "object",
+                        "description": "A dictionary mapping sheet names to a 2D array of cell values. Example: {'Sales': [['Product', 'Price'], ['Apple', 1.50], ['Banana', 2.00]]}"
+                    }
+                },
+                "required": ["filename", "sheets"]
+            }
+        }
     }
 ]
 
@@ -783,6 +1212,20 @@ def run_agent_turn(client: OpenAI, messages: list):
                         "X-Title": "TerminalAI",
                     }
                 )
+                
+            if not response or not hasattr(response, 'choices') or response.choices is None or len(response.choices) == 0:
+                err_msg = "API returned an empty response or no choices."
+                if response and hasattr(response, 'error') and response.error:
+                    err_msg = f"API Error: {response.error}"
+                elif isinstance(response, dict) and "error" in response:
+                    err_msg = f"API Error: {response['error']}"
+                else:
+                    try:
+                        err_msg = f"API Response: {response}"
+                    except Exception:
+                        pass
+                console.print(f"[red]❌ {err_msg}[/red]")
+                break
                 
             response_message = response.choices[0].message
             tool_calls = response_message.tool_calls
@@ -890,6 +1333,12 @@ def select_model_interactive() -> str:
         
     return model_choice
 
+def get_resource_path(relative_path: str) -> str:
+    """Get absolute path to resource, works for dev and for PyInstaller."""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
 def main():
     parser = argparse.ArgumentParser(description="Terminal AI Agent - A command line assistant using OpenRouter.")
     parser.add_argument("prompt", nargs="*", help="Initial prompt/command for the AI agent.")
@@ -947,41 +1396,40 @@ def main():
     # Configure system instruction
     os_info = f"{platform.system()} {platform.release()} ({platform.machine()})"
     shell_info = "cmd.exe" if platform.system() == "Windows" else "sh/bash"
-    system_instruction = (
-        "You are TerminalAI, an advanced agentic coding and system administration assistant.\n"
-        f"You are currently running on operating system: {os_info} (Shell: {shell_info}).\n"
-        "You have direct access to the user's terminal through the `execute_terminal_command` tool, "
-        "and direct file system access through `read_text_file`, `write_text_file`, and `edit_text_file`.\n"
-        "Your goal is to help the user with their requests by executing appropriate commands and operations.\n\n"
-        "Always follow these guidelines:\n"
-        "1. Be concise and professional in your explanations.\n"
-        "2. When the user asks you to do something, break it down into steps, explain your plan, "
-        "and run the necessary tools. You can run multiple tools sequentially to accomplish a task.\n"
-        "3. If a tool fails (e.g. exit code is non-zero), inspect the error output, explain the issue, and try a corrected tool call.\n"
-        "4. Keep track of files and directories. Since you can read and write files, you can create, modify, "
-        "and run programs.\n"
-        "5. Never execute destructive commands (like deleting system files) without explaining it clearly first.\n"
-        "6. Do not run interactive commands that require terminal input (such as raw `python`, `git commit` without `-m`, "
-        "or entering passwords) because stdin is not attached. Instead, run commands with non-interactive flags "
-        "or write scripts to files and run them.\n"
-        "7. You can read text-based files (.txt, .md, .py, .toml, etc.) in the project directory using the `read_text_file` tool. "
-        "Prefer using this tool over terminal commands (like cat or type) when you just need to inspect file contents. "
-        "If a file is very large (e.g. over 1000 lines), the tool will truncate the output. In this case, use the optional `start_line` and `end_line` parameters to paginate through it.\n"
-        "8. You can create or overwrite text-based files (.txt, .csv, .md, .py, etc.) in the project directory using the `write_text_file` tool. "
-        "Prefer using this tool over terminal redirection (like echo > file) when creating or writing files.\n"
-        "9. You can edit text-based files using the `edit_text_file` tool. Prefer using this tool for making targeted changes to existing files instead of rewriting them completely with `write_text_file`.\n"
-        "10. The command-line tool `db-cli` is available on this system. When you need to access, inspect, query, or modify a database, "
-        "you MUST use ONLY the `db-cli --skill` command inside `execute_terminal_command`. Do not use any other database tool, connection command, or custom script for database operations.\n"
-        "11. When you need to search the web, fetch web content, or browse the internet, you MUST use `playwright-cli` commands via `execute_terminal_command`.\n"
-        "    For example:\n"
-        "      - To open and load a URL: `playwright-cli open \"<url>\"` (Note: always wrap URLs in double quotes on Windows/PowerShell).\n"
-        "      - The open command outputs the location of a snapshot YAML file (e.g. `.playwright-cli\\page-*.yml`) that contains parsed page elements and text content.\n"
-        "      - Read the generated snapshot YAML file using the `read_text_file` tool to inspect the text content, links, and structure of the loaded page. "
-        "If the snapshot YAML file is very large (e.g. it lists many items and is truncated), specify `start_line` and `end_line` in `read_text_file` to read the sections you need (like the table headers and the first few rows).\n"
-        "      - If you encounter a CAPTCHA/bot block (e.g. on Google/DuckDuckGo), write and run a temporary Python helper script (e.g., using standard urllib with custom User-Agent headers) to fetch search results from web APIs or search engines (like Mojeek), and then use `playwright-cli` to fetch individual pages.\n"
-        "      - Use `playwright-cli click <ref>`, `playwright-cli type <text>`, `playwright-cli press <key>`, or `playwright-cli fill <ref> <text>` to interact with page elements (using the references like `e1`, `e2` from the snapshot).\n"
-        "      - Always close the browser session using `playwright-cli close` via `execute_terminal_command` when finished."
-    )
+    
+    try:
+        # Resolve system_prompt.md path checking order:
+        # 1. Next to the executable/script itself
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        local_prompt_path = os.path.join(exe_dir, "system_prompt.md")
+        
+        # 2. In current working directory
+        cwd_prompt_path = os.path.join(os.getcwd(), "system_prompt.md")
+        
+        # 3. Fallback to bundled resource path
+        bundled_prompt_path = get_resource_path("system_prompt.md")
+        
+        prompt_path = None
+        if os.path.exists(local_prompt_path):
+            prompt_path = local_prompt_path
+        elif os.path.exists(cwd_prompt_path):
+            prompt_path = cwd_prompt_path
+        else:
+            prompt_path = bundled_prompt_path
+            
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompt_template = f.read()
+        system_instruction = prompt_template.format(os_info=os_info, shell_info=shell_info)
+    except Exception as e:
+        console.print(f"[red]Warning: Could not load system_prompt.md: {escape(str(e))}[/red]")
+        console.print("[yellow]Falling back to default built-in system prompt...[/yellow]")
+        system_instruction = (
+            "You are TerminalAI, an advanced agentic coding and system administration assistant.\n"
+            f"You are currently running on operating system: {os_info} (Shell: {shell_info}).\n"
+            "You have direct access to the user's terminal through the `execute_terminal_command` tool, "
+            "and direct file system access through `read_text_file`, `write_text_file`, and `edit_text_file`.\n"
+            "Your goal is to help the user with their requests by executing appropriate commands and operations."
+        )
     
     # Initialize message list
     messages = [
