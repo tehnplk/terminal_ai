@@ -1,0 +1,232 @@
+import sys
+import os
+import argparse
+import urllib.request
+import urllib.parse
+import json
+import subprocess
+from html.parser import HTMLParser
+
+# Reconfigure stdout/stderr to UTF-8
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
+# Parser for search results (Mojeek)
+class MojeekParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.results = []
+        self.current_result = None
+        self.in_title_link = False
+        self.in_snippet = False
+        self.in_li = False
+        
+    def handle_starttag(self, tag, attrs):
+        attrs_dict = dict(attrs)
+        if tag == "li":
+            cls = attrs_dict.get("class", "")
+            if cls.startswith("r") and (len(cls) > 1 and cls[1].isdigit()):
+                self.in_li = True
+                self.current_result = {"title": "", "url": "", "snippet": ""}
+                
+        if self.in_li:
+            if tag == "a" and attrs_dict.get("class") == "title":
+                self.in_title_link = True
+                self.current_result["url"] = attrs_dict.get("href", "")
+            elif tag == "p" and attrs_dict.get("class") == "s":
+                self.in_snippet = True
+
+    def handle_endtag(self, tag):
+        if self.in_li:
+            if tag == "li":
+                self.in_li = False
+                if self.current_result and self.current_result["title"]:
+                    self.current_result["title"] = " ".join(self.current_result["title"].split())
+                    self.current_result["snippet"] = " ".join(self.current_result["snippet"].split())
+                    self.results.append(self.current_result)
+                self.current_result = None
+            elif tag == "a" and self.in_title_link:
+                self.in_title_link = False
+            elif tag == "p" and self.in_snippet:
+                self.in_snippet = False
+
+    def handle_data(self, data):
+        if self.in_li and self.current_result:
+            if self.in_title_link:
+                self.current_result["title"] += data
+            elif self.in_snippet:
+                self.current_result["snippet"] += data
+
+
+# Parser for pure-python fetch fallback
+class WebTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.text_parts = []
+        self.ignored_tags = {"script", "style", "nav", "header", "footer", "form", "head", "meta", "link", "noscript", "svg", "aside"}
+        self.current_path = []
+        
+    def handle_starttag(self, tag, attrs):
+        void_elements = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+        if tag not in void_elements:
+            self.current_path.append(tag)
+            
+        if tag in ["p", "div", "li", "tr"]:
+            self.text_parts.append("\n")
+        elif tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+            self.text_parts.append("\n\n")
+        elif tag == "br":
+            self.text_parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in self.current_path:
+            while self.current_path and self.current_path[-1] != tag:
+                self.current_path.pop()
+            if self.current_path:
+                self.current_path.pop()
+                
+        if tag in ["p", "div", "li", "tr"]:
+            self.text_parts.append("\n")
+        elif tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+            self.text_parts.append("\n\n")
+
+    def handle_data(self, data):
+        if any(ignored in self.current_path for ignored in self.ignored_tags):
+            return
+        text = data.strip()
+        if text:
+            if self.text_parts and not self.text_parts[-1].endswith("\n") and not self.text_parts[-1].endswith(" "):
+                if data and (data[0].isspace() or data[-1].isspace()):
+                    self.text_parts.append(" ")
+            self.text_parts.append(text)
+
+
+def search_web(query):
+    url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
+    req = urllib.request.Request(
+        url,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        html = response.read().decode('utf-8', errors='replace')
+        parser = MojeekParser()
+        parser.feed(html)
+        
+        if not parser.results:
+            return "No results found."
+            
+        output = []
+        for i, res in enumerate(parser.results, 1):
+            output.append(f"{i}. Title: {res['title']}")
+            output.append(f"   URL: {res['url']}")
+            output.append(f"   Snippet: {res['snippet']}")
+            output.append("-" * 40)
+        return "\n".join(output)
+
+
+def fetch_with_playwright(url):
+    try:
+        # Open URL
+        subprocess.run(["playwright-cli", "open", url], capture_output=True, text=True, check=True, shell=True)
+        
+        # Eval innerText with --json
+        res = subprocess.run(["playwright-cli", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, check=True, shell=True)
+        
+        # Close browser
+        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, check=True, shell=True)
+        
+        stdout = res.stdout
+        start = stdout.find('{')
+        end = stdout.rfind('}')
+        if start != -1 and end != -1:
+            json_str = stdout[start:end+1]
+            data = json.loads(json_str)
+            inner_text = data.get("result", "")
+            
+            if isinstance(inner_text, str) and inner_text.startswith('"') and inner_text.endswith('"'):
+                inner_text = json.loads(inner_text)
+                
+            return inner_text
+        else:
+            raise Exception("JSON block not found in playwright-cli output.")
+            
+    except Exception as e:
+        # Ensure browser is closed on error
+        subprocess.run(["playwright-cli", "close"], capture_output=True, text=True, shell=True)
+        raise e
+
+
+def fetch_with_urllib(url):
+    req = urllib.request.Request(
+        url,
+        headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        html = response.read().decode('utf-8', errors='replace')
+        parser = WebTextParser()
+        parser.feed(html)
+        text = "".join(parser.text_parts)
+        
+        # Clean formatting
+        lines = []
+        for line in text.split("\n"):
+            line_stripped = line.strip()
+            if line_stripped:
+                lines.append(line_stripped)
+            else:
+                if lines and lines[-1] != "":
+                    lines.append("")
+        return "\n".join(lines).strip()
+
+
+def fetch_web(url):
+    # Try playwright-cli first
+    try:
+        text = fetch_with_playwright(url)
+        if text.strip():
+            return text
+    except Exception as e:
+        # Fallback to urllib
+        pass
+
+    # Fallback to urllib
+    return fetch_with_urllib(url)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="CLI tool to search and fetch internet web pages.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    
+    # Search command
+    search_parser = subparsers.add_parser("search", help="Search the web using Mojeek")
+    search_parser.add_argument("query", help="The query string to search for")
+    
+    # Fetch command
+    fetch_parser = subparsers.add_parser("fetch", help="Fetch clean text content from a URL")
+    fetch_parser.add_argument("url", help="The URL to fetch")
+    
+    args = parser.parse_args()
+    
+    if args.command == "search":
+        try:
+            results = search_web(args.query)
+            print(results)
+        except Exception as e:
+            print(f"Error during search: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+    elif args.command == "fetch":
+        try:
+            text = fetch_web(args.url)
+            print(text)
+        except Exception as e:
+            print(f"Error fetching URL: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+
+if __name__ == "__main__":
+    main()

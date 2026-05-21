@@ -922,7 +922,15 @@ def main():
         "Prefer using this tool over terminal redirection (like echo > file) when creating or writing files.\n"
         "9. You can edit text-based files using the `edit_text_file` tool. Prefer using this tool for making targeted changes to existing files instead of rewriting them completely with `write_text_file`.\n"
         "10. The command-line tool `db-cli` is available on this system. When you need to access, inspect, query, or modify a database, "
-        "you MUST use ONLY the `db-cli --skill` command inside `execute_terminal_command`. Do not use any other database tool, connection command, or custom script for database operations."
+        "you MUST use ONLY the `db-cli --skill` command inside `execute_terminal_command`. Do not use any other database tool, connection command, or custom script for database operations.\n"
+        "11. When you need to search the web, fetch web content, or browse the internet, you MUST use `playwright-cli` commands via `execute_terminal_command`.\n"
+        "    For example:\n"
+        "      - To open and load a URL: `playwright-cli open \"<url>\"` (Note: always wrap URLs in double quotes on Windows/PowerShell).\n"
+        "      - The open command outputs the location of a snapshot YAML file (e.g. `.playwright-cli\\page-*.yml`) that contains parsed page elements and text content.\n"
+        "      - Read the generated snapshot YAML file using the `read_text_file` tool to inspect the text content, links, and structure of the loaded page.\n"
+        "      - If you encounter a CAPTCHA/bot block (e.g. on Google/DuckDuckGo), write and run a temporary Python helper script (e.g., using standard urllib with custom User-Agent headers) to fetch search results from web APIs or search engines (like Mojeek), and then use `playwright-cli` to fetch individual pages.\n"
+        "      - Use `playwright-cli click <ref>`, `playwright-cli type <text>`, `playwright-cli press <key>`, or `playwright-cli fill <ref> <text>` to interact with page elements (using the references like `e1`, `e2` from the snapshot).\n"
+        "      - Always close the browser session using `playwright-cli close` via `execute_terminal_command` when finished."
     )
     
     # Initialize message list

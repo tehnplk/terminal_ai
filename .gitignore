@@ -14,3 +14,6 @@ wheels/
 build/
 dist/
 *.spec
+
+# Playwright CLI local session/data folder
+.playwright-cli/
