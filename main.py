@@ -378,7 +378,7 @@ def execute_terminal_command(command: str) -> str:
             border_color = "green" if exit_code == 0 else "red"
             console.print(Panel(
                 "[italic dim]Interactive command finished.[/italic dim]",
-                title=f"[bold {border_color}]📋 Command Output ({status_text})[/bold {border_color}]",
+                title=f"[bold {border_color}]📋 Command Output ({status_text})[/]",
                 border_style=border_color,
                 expand=False
             ))
@@ -432,13 +432,13 @@ def execute_terminal_command(command: str) -> str:
             if stdout_str.strip():
                 output_content.append(f"[bold]Standard Output:[/bold]\n{escape(stdout_str.strip())}")
             if stderr_str.strip():
-                output_content.append(f"[bold red]Standard Error:[/bold]\n{escape(stderr_str.strip())}")
+                output_content.append(f"[bold red]Standard Error:[/bold red]\n{escape(stderr_str.strip())}")
             if not stdout_str.strip() and not stderr_str.strip():
                 output_content.append("[italic dim]No output received.[/italic dim]")
                 
             console.print(Panel(
                 "\n\n".join(output_content),
-                title=f"[bold {border_color}]📋 Command Output ({status_text})[/bold {border_color}]",
+                title=f"[bold {border_color}]📋 Command Output ({status_text})[/]",
                 border_style=border_color,
                 expand=False
             ))
@@ -607,11 +607,11 @@ def edit_text_file(filename: str, find_str: str = None, replace_str: str = None,
         console.print()
         edit_desc = ""
         if find_str is not None:
-            edit_desc = f"Search and replace in '{filename}':\n[bold yellow]Find:[/bold yellow]\n{escape(find_str)}\n\n[bold green]Replace:[/bold green]\n{escape(replace_str if replace_str is not None else '')}"
+            edit_desc = f"Search and replace in '{escape(filename)}':\n[bold yellow]Find:[/bold yellow]\n{escape(find_str)}\n\n[bold green]Replace:[/bold green]\n{escape(replace_str if replace_str is not None else '')}"
         elif line_number is not None:
-            edit_desc = f"Replace line {line_number} in '{filename}' with:\n{escape(content)}"
+            edit_desc = f"Replace line {line_number} in '{escape(filename)}' with:\n{escape(content)}"
         elif content is not None:
-            edit_desc = f"Append to '{filename}':\n{escape(content)}"
+            edit_desc = f"Append to '{escape(filename)}':\n{escape(content)}"
         else:
             return "Error: You must provide either find_str, line_number, or content to perform an edit."
             
