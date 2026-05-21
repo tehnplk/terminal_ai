@@ -128,12 +128,35 @@ def search_with_urllib(query):
         return "\n".join(output)
 
 
+def get_playwright_config_path():
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        exe_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(exe_dir, "playwright_config.json")
+    
+    if not os.path.exists(config_path):
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "browser": {
+                        "contextOptions": {
+                            "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        }
+                    }
+                }, f, indent=2)
+        except Exception:
+            pass
+    return config_path
+
+
 def search_with_playwright(query):
     session = "search_session"
     url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
+    config_path = get_playwright_config_path()
     try:
-        # Try in headless mode first
-        subprocess.run(["playwright-cli", f"-s={session}", "open", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+        # Open in headless mode with config file
+        subprocess.run(["playwright-cli", f"-s={session}", "open", f"--config={config_path}", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
         
         # Check if blocked
         res = subprocess.run(["playwright-cli", f"-s={session}", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
@@ -154,10 +177,7 @@ def search_with_playwright(query):
             is_blocked = True
             
         if is_blocked:
-            # Close browser
-            subprocess.run(["playwright-cli", f"-s={session}", "close"], capture_output=True, text=True, encoding='utf-8', errors='replace', shell=True)
-            # Reopen in headed mode (bypasses bot challenges)
-            subprocess.run(["playwright-cli", f"-s={session}", "open", url, "--headed"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+            raise Exception("Access blocked by search engine (detected as automation/bot).")
             
         # Extract search results
         js_code = (
@@ -226,9 +246,10 @@ def search_web(query):
 
 
 def fetch_with_playwright(url):
+    config_path = get_playwright_config_path()
     try:
-        # Open URL
-        subprocess.run(["playwright-cli", "open", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
+        # Open URL with config
+        subprocess.run(["playwright-cli", "open", f"--config={config_path}", url], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
         
         # Eval innerText with --json
         res = subprocess.run(["playwright-cli", "eval", "document.body.innerText", "--json"], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True, shell=True)
