@@ -6,6 +6,7 @@ import argparse
 import json
 import time
 import signal
+import platform
 from dotenv import load_dotenv
 from openai import OpenAI
 import questionary
@@ -944,8 +945,11 @@ def main():
         sys.exit(1)
         
     # Configure system instruction
+    os_info = f"{platform.system()} {platform.release()} ({platform.machine()})"
+    shell_info = "cmd.exe" if platform.system() == "Windows" else "sh/bash"
     system_instruction = (
         "You are TerminalAI, an advanced agentic coding and system administration assistant.\n"
+        f"You are currently running on operating system: {os_info} (Shell: {shell_info}).\n"
         "You have direct access to the user's terminal through the `execute_terminal_command` tool, "
         "and direct file system access through `read_text_file`, `write_text_file`, and `edit_text_file`.\n"
         "Your goal is to help the user with their requests by executing appropriate commands and operations.\n\n"
