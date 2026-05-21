@@ -17,3 +17,11 @@ dist/
 
 # Playwright CLI local session/data folder
 .playwright-cli/
+
+# Local generated artifacts and scratch files
+artifact/
+scratch/
+*.log
+doc_*.docx
+check.txt
+test.txt

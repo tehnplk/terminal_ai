@@ -13,51 +13,85 @@ if hasattr(sys.stdout, 'reconfigure'):
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8')
 
-# Parser for search results (Mojeek)
-class MojeekParser(HTMLParser):
+class DuckDuckGoParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.results = []
         self.current_result = None
         self.in_title_link = False
         self.in_snippet = False
-        self.in_li = False
-        
+        self.snippet_tag = None
+
+    @staticmethod
+    def has_class(attrs_dict, class_name):
+        classes = attrs_dict.get("class", "")
+        return class_name in classes.split()
+
+    def finish_current_result(self):
+        if self.current_result and self.current_result["title"]:
+            self.current_result["title"] = " ".join(self.current_result["title"].split())
+            self.current_result["snippet"] = " ".join(self.current_result["snippet"].split())
+            self.results.append(self.current_result)
+        self.current_result = None
+
     def handle_starttag(self, tag, attrs):
         attrs_dict = dict(attrs)
-        if tag == "li":
-            cls = attrs_dict.get("class", "")
-            if cls.startswith("r") and (len(cls) > 1 and cls[1].isdigit()):
-                self.in_li = True
-                self.current_result = {"title": "", "url": "", "snippet": ""}
-                
-        if self.in_li:
-            if tag == "a" and attrs_dict.get("class") == "title":
-                self.in_title_link = True
-                self.current_result["url"] = attrs_dict.get("href", "")
-            elif tag == "p" and attrs_dict.get("class") == "s":
-                self.in_snippet = True
+        if tag == "a" and self.has_class(attrs_dict, "result__a"):
+            self.finish_current_result()
+            self.current_result = {
+                "title": "",
+                "url": normalize_duckduckgo_url(attrs_dict.get("href", "")),
+                "snippet": "",
+            }
+            self.in_title_link = True
+        elif self.current_result and self.has_class(attrs_dict, "result__snippet"):
+            self.in_snippet = True
+            self.snippet_tag = tag
 
     def handle_endtag(self, tag):
-        if self.in_li:
-            if tag == "li":
-                self.in_li = False
-                if self.current_result and self.current_result["title"]:
-                    self.current_result["title"] = " ".join(self.current_result["title"].split())
-                    self.current_result["snippet"] = " ".join(self.current_result["snippet"].split())
-                    self.results.append(self.current_result)
-                self.current_result = None
-            elif tag == "a" and self.in_title_link:
-                self.in_title_link = False
-            elif tag == "p" and self.in_snippet:
-                self.in_snippet = False
+        if self.in_title_link and tag == "a":
+            self.in_title_link = False
+        if self.in_snippet and tag == self.snippet_tag:
+            self.in_snippet = False
+            self.snippet_tag = None
 
     def handle_data(self, data):
-        if self.in_li and self.current_result:
-            if self.in_title_link:
-                self.current_result["title"] += data
-            elif self.in_snippet:
-                self.current_result["snippet"] += data
+        if not self.current_result:
+            return
+        if self.in_title_link:
+            self.current_result["title"] += data
+        elif self.in_snippet:
+            self.current_result["snippet"] += data
+
+    def close(self):
+        super().close()
+        self.finish_current_result()
+
+
+def normalize_duckduckgo_url(url):
+    parsed = urllib.parse.urlparse(url)
+    if parsed.path.startswith("/l/"):
+        query = urllib.parse.parse_qs(parsed.query)
+        if "uddg" in query and query["uddg"]:
+            return urllib.parse.unquote(query["uddg"][0])
+    return url
+
+
+def format_duckduckgo_results(html):
+    parser = DuckDuckGoParser()
+    parser.feed(html)
+    parser.close()
+
+    if not parser.results:
+        return "No results found."
+
+    output = []
+    for i, res in enumerate(parser.results, 1):
+        output.append(f"{i}. Title: {res['title']}")
+        output.append(f"   URL: {res['url']}")
+        output.append(f"   Snippet: {res['snippet']}")
+        output.append("-" * 40)
+    return "\n".join(output)
 
 
 # Parser for pure-python fetch fallback
@@ -104,7 +138,11 @@ class WebTextParser(HTMLParser):
 
 
 def search_with_urllib(query):
-    url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
+    return search_with_duckduckgo(query)
+
+
+def search_with_duckduckgo(query):
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
     req = urllib.request.Request(
         url,
         headers={
@@ -113,19 +151,7 @@ def search_with_urllib(query):
     )
     with urllib.request.urlopen(req, timeout=10) as response:
         html = response.read().decode('utf-8', errors='replace')
-        parser = MojeekParser()
-        parser.feed(html)
-        
-        if not parser.results:
-            return "No results found."
-            
-        output = []
-        for i, res in enumerate(parser.results, 1):
-            output.append(f"{i}. Title: {res['title']}")
-            output.append(f"   URL: {res['url']}")
-            output.append(f"   Snippet: {res['snippet']}")
-            output.append("-" * 40)
-        return "\n".join(output)
+        return format_duckduckgo_results(html)
 
 
 def get_playwright_config_path():
@@ -152,7 +178,7 @@ def get_playwright_config_path():
 
 def search_with_playwright(query):
     session = "search_session"
-    url = "https://www.mojeek.com/search?q=" + urllib.parse.quote_plus(query)
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote_plus(query)
     config_path = get_playwright_config_path()
     try:
         # Open in headless mode with config file
@@ -179,15 +205,18 @@ def search_with_playwright(query):
         if is_blocked:
             raise Exception("Access blocked by search engine (detected as automation/bot).")
             
-        # Extract search results
+        # Extract search results from DuckDuckGo's static HTML layout.
         js_code = (
-            "Array.from(document.querySelectorAll('li')).filter(function(li){"
-            "var cls=li.className||'';"
-            "return cls.indexOf('r')===0;"
-            "}).map(function(li){"
-            "var a=li.querySelector('a.title');"
-            "var p=li.querySelector('p.s');"
-            "return {title:a?a.innerText:'',url:a?a.href:'',snippet:p?p.innerText:''};"
+            "Array.from(document.querySelectorAll('a.result__a')).map(function(a){"
+            "var container=a.closest('.result');"
+            "var p=container?container.querySelector('.result__snippet'):null;"
+            "var href=a.getAttribute('href')||a.href||'';"
+            "try{"
+            "var u=new URL(href,location.href);"
+            "var uddg=u.searchParams.get('uddg');"
+            "href=uddg?decodeURIComponent(uddg):u.href;"
+            "}catch(e){}"
+            "return {title:a.innerText||'',url:href,snippet:p?p.innerText:''};"
             "})"
         )
         cmd = f'playwright-cli -s={session} eval "{js_code}" --json'
@@ -230,19 +259,27 @@ def search_with_playwright(query):
 
 
 def search_web(query):
-    # Try playwright-cli first
+    last_error = None
+
+    # Try DuckDuckGo first because it works without an API key and has a static HTML endpoint.
+    try:
+        results = search_with_duckduckgo(query)
+        if results and results.strip() and results.strip() != "No results found.":
+            return results
+    except Exception as e:
+        last_error = e
+
+    # Fallback to playwright-cli search.
     try:
         results = search_with_playwright(query)
         if results and results.strip():
             return results
     except Exception as e:
-        pass
-        
-    # Fallback to urllib search
-    try:
-        return search_with_urllib(query)
-    except Exception as e:
-        return f"Error performing web search: {str(e)}"
+        last_error = e
+
+    if last_error:
+        return f"Error performing web search: {str(last_error)}"
+    return "No results found."
 
 
 def fetch_with_playwright(url):
@@ -333,7 +370,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     # Search command
-    search_parser = subparsers.add_parser("search", help="Search the web using Mojeek")
+    search_parser = subparsers.add_parser("search", help="Search the web using DuckDuckGo")
     search_parser.add_argument("query", help="The query string to search for")
     
     # Fetch command
