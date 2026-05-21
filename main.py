@@ -37,6 +37,7 @@ from rich.status import Status
 from rich.syntax import Syntax
 from rich.markdown import Markdown
 from rich.align import Align
+from rich.markup import escape
 
 # Initialize Rich Console
 console = Console()
@@ -219,15 +220,15 @@ def process_prompt_mentions(prompt: str, cwd: str) -> str:
     for mention in mentions:
         full_path = os.path.abspath(os.path.join(cwd, mention))
         if not os.path.exists(full_path):
-            console.print(f"[yellow]⚠️ Mentioned path '@{mention}' not found relative to current directory.[/yellow]")
+            console.print(f"[yellow]⚠️ Mentioned path '@{escape(mention)}' not found relative to current directory.[/yellow]")
             continue
             
         if os.path.isdir(full_path):
-            console.print(f"[green]📁 Attached directory @{mention}[/green]")
+            console.print(f"[green]📁 Attached directory @{escape(mention)}[/green]")
             context = get_folder_content_context(full_path, cwd)
             attachments_context.append(context)
         elif os.path.isfile(full_path):
-            console.print(f"[green]📎 Attached file @{mention}[/green]")
+            console.print(f"[green]📎 Attached file @{escape(mention)}[/green]")
             context = get_file_content_context(full_path, cwd)
             attachments_context.append(context)
             
@@ -315,7 +316,7 @@ def execute_terminal_command(command: str) -> str:
     console.print(Panel(
         Syntax(command, "bash", theme="monokai", line_numbers=False),
         title="[bold yellow]⚠️ Proposed Terminal Command[/bold yellow]",
-        subtitle=f"[dim]CWD: {cwd}[/dim]",
+        subtitle=f"[dim]CWD: {escape(cwd)}[/dim]",
         border_style="yellow",
         expand=False
     ))
@@ -429,9 +430,9 @@ def execute_terminal_command(command: str) -> str:
             
             output_content = []
             if stdout_str.strip():
-                output_content.append(f"[bold]Standard Output:[/bold]\n{stdout_str.strip()}")
+                output_content.append(f"[bold]Standard Output:[/bold]\n{escape(stdout_str.strip())}")
             if stderr_str.strip():
-                output_content.append(f"[bold red]Standard Error:[/bold]\n{stderr_str.strip()}")
+                output_content.append(f"[bold red]Standard Error:[/bold]\n{escape(stderr_str.strip())}")
             if not stdout_str.strip() and not stderr_str.strip():
                 output_content.append("[italic dim]No output received.[/italic dim]")
                 
@@ -445,15 +446,18 @@ def execute_terminal_command(command: str) -> str:
             return f"Exit Code: {exit_code}\n\nSTDOUT:\n{stdout_str}\n\nSTDERR:\n{stderr_str}"
         
     except Exception as e:
-        console.print(f"[red]❌ Error running command: {str(e)}[/red]")
+        console.print(f"[red]❌ Error running command: {escape(str(e))}[/red]")
         return f"Error running command: {str(e)}"
 
-def read_text_file(filename: str) -> str:
+def read_text_file(filename: str, start_line: int = None, end_line: int = None) -> str:
     """
     Reads the content of a text-based file (like .txt, .md, .py, .toml, etc.) in the project directory.
+    Supports reading specific line ranges for large files.
     
     Args:
         filename: The name or path of the file to read (relative to the current working directory).
+        start_line: The 1-indexed line number to start reading from (inclusive).
+        end_line: The 1-indexed line number to stop reading at (inclusive).
     """
     global cwd
     
@@ -463,7 +467,7 @@ def read_text_file(filename: str) -> str:
         
         # Verify extension is a text file
         ext = os.path.splitext(filepath)[1].lower()
-        allowed_extensions = ('.txt', '.csv', '.md', '.py', '.toml', '.json', '.yaml', '.yml', '.ini', '.cfg', '.xml', '.csv', '.gitignore')
+        allowed_extensions = ('.txt', '.csv', '.md', '.py', '.toml', '.json', '.yaml', '.yml', '.ini', '.cfg', '.xml', '.gitignore')
         if ext not in allowed_extensions:
             return f"Error: Only text-based files ({', '.join(allowed_extensions)}) can be read using this tool."
             
@@ -474,10 +478,42 @@ def read_text_file(filename: str) -> str:
             return f"Error: '{filename}' is a directory, not a file."
             
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
+            lines = f.readlines()
             
+        total_lines = len(lines)
+        
+        # Handle line range selection
+        if start_line is not None or end_line is not None:
+            start = (start_line - 1) if start_line is not None else 0
+            end = end_line if end_line is not None else total_lines
+            
+            # Bounds check
+            start = max(0, min(start, total_lines))
+            end = max(0, min(end, total_lines))
+            
+            if start >= end:
+                return f"Error: Invalid line range {start_line}-{end_line} (total lines: {total_lines})."
+                
+            selected_lines = lines[start:end]
+            content = "".join(selected_lines)
+            console.print(f"\n[bold cyan]📖 Reading file: {escape(filename)} (lines {start+1}-{end} of {total_lines})[/bold cyan]")
+            return content
+            
+        # If no range specified, apply a safety limit of 1000 lines
+        MAX_AUTO_LINES = 1000
+        if total_lines > MAX_AUTO_LINES:
+            content = "".join(lines[:MAX_AUTO_LINES])
+            console.print(f"\n[bold cyan]📖 Reading file: {escape(filename)} (first {MAX_AUTO_LINES} of {total_lines} lines - TRUNCATED for safety)[/bold cyan]")
+            return (
+                f"[TRUNCATED - Showing first {MAX_AUTO_LINES} of {total_lines} lines. "
+                f"The file is too large to read fully at once. Use the 'start_line' and 'end_line' "
+                f"parameters of 'read_text_file' to read specific sections of the file.]\n\n"
+                f"{content}"
+            )
+            
+        content = "".join(lines)
         # Display feedback in console
-        console.print(f"\n[bold cyan]📖 Reading file: {filename}[/bold cyan]")
+        console.print(f"\n[bold cyan]📖 Reading file: {escape(filename)}[/bold cyan]")
         return content
     except Exception as e:
         return f"Error reading file '{filename}': {str(e)}"
@@ -512,15 +548,15 @@ def write_text_file(filename: str, content: str) -> str:
             
         console.print(Panel(
             Syntax(preview, ext[1:] if ext[1:] else "text", theme="monokai", line_numbers=True),
-            title=f"[bold yellow]📝 Proposed File Creation: {filename}[/bold yellow]",
-            subtitle=f"[dim]CWD: {cwd}[/dim]",
+            title=f"[bold yellow]📝 Proposed File Creation: {escape(filename)}[/bold yellow]",
+            subtitle=f"[dim]CWD: {escape(cwd)}[/dim]",
             border_style="yellow",
             expand=False
         ))
         
         # 2. Get User Confirmation
         # Since writing/creating a file is not a deletion, it is non-destructive and auto-approved.
-        console.print(f"[yellow]Auto-approving file write (non-destructive): {filename}[/yellow]")
+        console.print(f"[yellow]Auto-approving file write (non-destructive): {escape(filename)}[/yellow]")
         confirmed = True
             
         # Ensure parent directories exist
@@ -530,11 +566,11 @@ def write_text_file(filename: str, content: str) -> str:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
             
-        console.print(f"[green]✓ Successfully wrote file: {filename}[/green]")
+        console.print(f"[green]✓ Successfully wrote file: {escape(filename)}[/green]")
         return f"Success: File '{filename}' was successfully created/written."
         
     except Exception as e:
-        console.print(f"[red]❌ Error creating file: {str(e)}[/red]")
+        console.print(f"[red]❌ Error creating file: {escape(str(e))}[/red]")
         return f"Error creating file '{filename}': {str(e)}"
 
 def edit_text_file(filename: str, find_str: str = None, replace_str: str = None, line_number: int = None, content: str = None) -> str:
@@ -571,24 +607,24 @@ def edit_text_file(filename: str, find_str: str = None, replace_str: str = None,
         console.print()
         edit_desc = ""
         if find_str is not None:
-            edit_desc = f"Search and replace in '{filename}':\n[bold yellow]Find:[/bold yellow]\n{find_str}\n\n[bold green]Replace:[/bold green]\n{replace_str if replace_str else ''}"
+            edit_desc = f"Search and replace in '{filename}':\n[bold yellow]Find:[/bold yellow]\n{escape(find_str)}\n\n[bold green]Replace:[/bold green]\n{escape(replace_str if replace_str is not None else '')}"
         elif line_number is not None:
-            edit_desc = f"Replace line {line_number} in '{filename}' with:\n{content}"
+            edit_desc = f"Replace line {line_number} in '{filename}' with:\n{escape(content)}"
         elif content is not None:
-            edit_desc = f"Append to '{filename}':\n{content}"
+            edit_desc = f"Append to '{filename}':\n{escape(content)}"
         else:
             return "Error: You must provide either find_str, line_number, or content to perform an edit."
             
         console.print(Panel(
             edit_desc,
-            title=f"[bold yellow]📝 Proposed File Edit: {filename}[/bold yellow]",
-            subtitle=f"[dim]CWD: {cwd}[/dim]",
+            title=f"[bold yellow]📝 Proposed File Edit: {escape(filename)}[/bold yellow]",
+            subtitle=f"[dim]CWD: {escape(cwd)}[/dim]",
             border_style="yellow",
             expand=False
         ))
         
         # 2. Auto-approve since it's non-destructive
-        console.print(f"[yellow]Auto-approving file edit (non-destructive): {filename}[/yellow]")
+        console.print(f"[yellow]Auto-approving file edit (non-destructive): {escape(filename)}[/yellow]")
         
         # Read current content
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
@@ -612,11 +648,11 @@ def edit_text_file(filename: str, find_str: str = None, replace_str: str = None,
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(new_content)
             
-        console.print(f"[green]✓ Successfully edited file: {filename}[/green]")
+        console.print(f"[green]✓ Successfully edited file: {escape(filename)}[/green]")
         return f"Success: File '{filename}' was successfully edited."
         
     except Exception as e:
-        console.print(f"[red]❌ Error editing file: {str(e)}[/red]")
+        console.print(f"[red]❌ Error editing file: {escape(str(e))}[/red]")
         return f"Error editing file '{filename}': {str(e)}"
 
 # Available functions for the agent loop mapping
@@ -650,13 +686,21 @@ tools_schema = [
         "type": "function",
         "function": {
             "name": "read_text_file",
-            "description": "Reads the content of a text-based file (like .txt, .md, .py, .toml, etc.) in the project directory.",
+            "description": "Reads the content of a text-based file (like .txt, .md, .py, .toml, etc.) in the project directory. Supports reading specific line ranges for large files.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "filename": {
                         "type": "string",
                         "description": "The name or path of the file to read (relative to the current working directory)."
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "The 1-indexed line number to start reading from (inclusive)."
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "The 1-indexed line number to stop reading at (inclusive)."
                     }
                 },
                 "required": ["filename"]
@@ -801,7 +845,7 @@ def run_agent_turn(client: OpenAI, messages: list):
                 del messages[initial_length:]
             break
         except Exception as e:
-            console.print(f"[red]Error during API transaction: {str(e)}[/red]")
+            console.print(f"[red]Error during API transaction: {escape(str(e))}[/red]")
             break
 def select_model_interactive() -> str:
     """Helper function to let the user select a model using arrow keys."""
@@ -896,7 +940,7 @@ def main():
             api_key=api_key,
         )
     except Exception as e:
-        console.print(f"[red]Error initializing OpenAI Client: {str(e)}[/red]")
+        console.print(f"[red]Error initializing OpenAI Client: {escape(str(e))}[/red]")
         sys.exit(1)
         
     # Configure system instruction
@@ -917,7 +961,8 @@ def main():
         "or entering passwords) because stdin is not attached. Instead, run commands with non-interactive flags "
         "or write scripts to files and run them.\n"
         "7. You can read text-based files (.txt, .md, .py, .toml, etc.) in the project directory using the `read_text_file` tool. "
-        "Prefer using this tool over terminal commands (like cat or type) when you just need to inspect file contents.\n"
+        "Prefer using this tool over terminal commands (like cat or type) when you just need to inspect file contents. "
+        "If a file is very large (e.g. over 1000 lines), the tool will truncate the output. In this case, use the optional `start_line` and `end_line` parameters to paginate through it.\n"
         "8. You can create or overwrite text-based files (.txt, .csv, .md, .py, etc.) in the project directory using the `write_text_file` tool. "
         "Prefer using this tool over terminal redirection (like echo > file) when creating or writing files.\n"
         "9. You can edit text-based files using the `edit_text_file` tool. Prefer using this tool for making targeted changes to existing files instead of rewriting them completely with `write_text_file`.\n"
@@ -927,7 +972,8 @@ def main():
         "    For example:\n"
         "      - To open and load a URL: `playwright-cli open \"<url>\"` (Note: always wrap URLs in double quotes on Windows/PowerShell).\n"
         "      - The open command outputs the location of a snapshot YAML file (e.g. `.playwright-cli\\page-*.yml`) that contains parsed page elements and text content.\n"
-        "      - Read the generated snapshot YAML file using the `read_text_file` tool to inspect the text content, links, and structure of the loaded page.\n"
+        "      - Read the generated snapshot YAML file using the `read_text_file` tool to inspect the text content, links, and structure of the loaded page. "
+        "If the snapshot YAML file is very large (e.g. it lists many items and is truncated), specify `start_line` and `end_line` in `read_text_file` to read the sections you need (like the table headers and the first few rows).\n"
         "      - If you encounter a CAPTCHA/bot block (e.g. on Google/DuckDuckGo), write and run a temporary Python helper script (e.g., using standard urllib with custom User-Agent headers) to fetch search results from web APIs or search engines (like Mojeek), and then use `playwright-cli` to fetch individual pages.\n"
         "      - Use `playwright-cli click <ref>`, `playwright-cli type <text>`, `playwright-cli press <key>`, or `playwright-cli fill <ref> <text>` to interact with page elements (using the references like `e1`, `e2` from the snapshot).\n"
         "      - Always close the browser session using `playwright-cli close` via `execute_terminal_command` when finished."
@@ -943,7 +989,7 @@ def main():
     if initial_prompt:
         processed_prompt = process_prompt_mentions(initial_prompt, cwd)
         messages.append({"role": "user", "content": processed_prompt})
-        console.print(f"\n[bold cyan]👤 Task:[/bold cyan] {initial_prompt}")
+        console.print(f"\n[bold cyan]👤 Task:[/bold cyan] {escape(initial_prompt)}")
         run_agent_turn(client, messages)
     else:
         # Run in interactive REPL mode
@@ -999,7 +1045,7 @@ def main():
                 # Check for /model slash command
                 if user_input.strip().lower() == "/model":
                     OPENROUTER_MODEL = select_model_interactive()
-                    console.print(f"[bold cyan]🔄 Switched Model to: {OPENROUTER_MODEL}[/bold cyan]")
+                    console.print(f"[bold cyan]🔄 Switched Model to: {escape(OPENROUTER_MODEL)}[/bold cyan]")
                     continue
                     
                 # Check for /clear slash command
@@ -1029,7 +1075,7 @@ def main():
                     time.sleep(1)
                 break
             except Exception as e:
-                console.print(f"[red]Error in chat loop: {str(e)}[/red]")
+                console.print(f"[red]Error in chat loop: {escape(str(e))}[/red]")
 
 if __name__ == "__main__":
     try:
