@@ -367,8 +367,7 @@ def execute_terminal_command(command: str) -> str:
                 exit_code = process.returncode
             except KeyboardInterrupt:
                 process.kill()
-                console.print("\n[yellow]⚠️ Command cancelled by user (Ctrl+C).[/yellow]")
-                return "Command cancelled by user."
+                raise KeyboardInterrupt
             except subprocess.TimeoutExpired:
                 process.kill()
                 console.print("[red]❌ Interactive command timed out after 120 seconds.[/red]")
@@ -410,8 +409,7 @@ def execute_terminal_command(command: str) -> str:
                         process.kill()
                     except Exception:
                         pass
-                console.print("\n[yellow]⚠️ Command cancelled by user (Ctrl+C).[/yellow]")
-                return "Error: Command cancelled by user."
+                raise KeyboardInterrupt
             except subprocess.TimeoutExpired:
                 if process:
                     try:
