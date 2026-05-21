@@ -7,6 +7,7 @@ import json
 import time
 import signal
 import platform
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from openai import OpenAI
 import docx
@@ -923,6 +924,14 @@ def web_browser_close() -> str:
     except Exception as e:
         return f"Error closing browser: {str(e)}"
 
+def get_current_time() -> str:
+    """
+    Returns the current date and time in the Asia/Bangkok timezone (UTC+7).
+    """
+    tz = timezone(timedelta(hours=7))
+    now = datetime.now(tz)
+    return f"Current date and time in Asia/Bangkok: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+
 # Available functions for the agent loop mapping
 available_functions = {
     "execute_terminal_command": execute_terminal_command,
@@ -936,6 +945,7 @@ available_functions = {
     "web_browser_close": web_browser_close,
     "create_docx_file": create_docx_file,
     "create_xlsx_file": create_xlsx_file,
+    "get_current_time": get_current_time,
 }
 
 # OpenAI/OpenRouter compatible tools schema definition
@@ -1188,6 +1198,17 @@ tools_schema = [
                     }
                 },
                 "required": ["filename", "sheets"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_time",
+            "description": "Returns the current date and time in the Asia/Bangkok timezone (UTC+7).",
+            "parameters": {
+                "type": "object",
+                "properties": {}
             }
         }
     }
