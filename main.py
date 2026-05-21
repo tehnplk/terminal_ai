@@ -5,6 +5,7 @@ import re
 import argparse
 import json
 import time
+import signal
 from dotenv import load_dotenv
 from openai import OpenAI
 import questionary
@@ -21,6 +22,12 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+# Map SIGBREAK to raise KeyboardInterrupt on Windows so simulated events behave like Ctrl+C
+if sys.platform == "win32":
+    def sigbreak_handler(signum, frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGBREAK, sigbreak_handler)
 
 from rich.console import Console
 from rich.panel import Panel
@@ -378,19 +385,45 @@ def execute_terminal_command(command: str) -> str:
             return f"Exit Code: {exit_code}\nInteractive command completed."
         else:
             # Non-interactive mode: capture stdout/stderr via pipes
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=60,
-                env=os.environ.copy()
-            )
-            
-            stdout_str = safe_decode(result.stdout)
-            stderr_str = safe_decode(result.stderr)
-            exit_code = result.returncode
+            # Run using Popen to allow proper interruption handling
+            process = None
+            try:
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=os.environ.copy()
+                )
+                stdout_bytes, stderr_bytes = process.communicate(timeout=60)
+                stdout_str = safe_decode(stdout_bytes)
+                stderr_str = safe_decode(stderr_bytes)
+                exit_code = process.returncode
+            except KeyboardInterrupt:
+                if process:
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                console.print("\n[yellow]⚠️ Command cancelled by user (Ctrl+C).[/yellow]")
+                return "Error: Command cancelled by user."
+            except subprocess.TimeoutExpired:
+                if process:
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                console.print("[red]❌ Command timed out after 60 seconds.[/red]")
+                return "Error: Command timed out after 60 seconds."
             
             # 4. Display Output Panel
             status_text = "[green]Success (0)[/green]" if exit_code == 0 else f"[red]Failed ({exit_code})[/red]"
@@ -413,9 +446,6 @@ def execute_terminal_command(command: str) -> str:
             
             return f"Exit Code: {exit_code}\n\nSTDOUT:\n{stdout_str}\n\nSTDERR:\n{stderr_str}"
         
-    except subprocess.TimeoutExpired:
-        console.print("[red]❌ Command timed out after 60 seconds.[/red]")
-        return f"Error: Command timed out after 60 seconds."
     except Exception as e:
         console.print(f"[red]❌ Error running command: {str(e)}[/red]")
         return f"Error running command: {str(e)}"
@@ -693,6 +723,7 @@ tools_schema = [
 
 def run_agent_turn(client: OpenAI, messages: list):
     """Executes a single agent turn, handling potential recursive tool calling loops."""
+    initial_length = len(messages) - 1
     while True:
         try:
             # Call OpenRouter API with a nice spinner
@@ -766,6 +797,11 @@ def run_agent_turn(client: OpenAI, messages: list):
                     "content": tool_output,
                 })
                 
+        except KeyboardInterrupt:
+            console.print("\n[yellow]⚠️ Agent execution cancelled by user (Ctrl+C).[/yellow]")
+            if len(messages) > initial_length:
+                del messages[initial_length:]
+            break
         except Exception as e:
             console.print(f"[red]Error during API transaction: {str(e)}[/red]")
             break
