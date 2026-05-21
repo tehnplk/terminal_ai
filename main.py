@@ -4,6 +4,7 @@ import subprocess
 import re
 import argparse
 import json
+import time
 from dotenv import load_dotenv
 from openai import OpenAI
 import questionary
@@ -339,42 +340,78 @@ def execute_terminal_command(command: str) -> str:
     # Update our tracking cwd if the command changes directories
     update_cwd_from_command(command)
     
+    # Detect interactive commands that may require user input
+    interactive_commands = ('date', 'time', 'pause', 'set /p', 'choice', 'more', 'edit', 'nslookup', 'diskpart', 'format', 'chkdsk')
+    cmd_lower = command.strip().lower()
+    is_interactive = any(cmd_lower == ic or cmd_lower.startswith(ic + ' ') or cmd_lower.startswith(ic + '\n') for ic in interactive_commands)
+    
     try:
-        # Run using subprocess
-        result = subprocess.run(
-            command,
-            shell=True,
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=60,
-            env=os.environ.copy()
-        )
-        
-        stdout_str = safe_decode(result.stdout)
-        stderr_str = safe_decode(result.stderr)
-        exit_code = result.returncode
-        
-        # 4. Display Output Panel
-        status_text = "[green]Success (0)[/green]" if exit_code == 0 else f"[red]Failed ({exit_code})[/red]"
-        border_color = "green" if exit_code == 0 else "red"
-        
-        output_content = []
-        if stdout_str.strip():
-            output_content.append(f"[bold]Standard Output:[/bold]\n{stdout_str.strip()}")
-        if stderr_str.strip():
-            output_content.append(f"[bold red]Standard Error:[/bold]\n{stderr_str.strip()}")
-        if not stdout_str.strip() and not stderr_str.strip():
-            output_content.append("[italic dim]No output received.[/italic dim]")
+        if is_interactive:
+            # Interactive mode: run with real-time stdin/stdout so user can type input
+            console.print("[dim]ℹ️ Interactive command detected — type your input below (or press Ctrl+C to cancel).[/dim]")
+            try:
+                process = subprocess.Popen(
+                    command,
+                    shell=True,
+                    cwd=cwd,
+                    env=os.environ.copy()
+                )
+                process.wait(timeout=120)
+                exit_code = process.returncode
+            except KeyboardInterrupt:
+                process.kill()
+                console.print("\n[yellow]⚠️ Command cancelled by user (Ctrl+C).[/yellow]")
+                return "Command cancelled by user."
+            except subprocess.TimeoutExpired:
+                process.kill()
+                console.print("[red]❌ Interactive command timed out after 120 seconds.[/red]")
+                return "Error: Interactive command timed out after 120 seconds."
             
-        console.print(Panel(
-            "\n\n".join(output_content),
-            title=f"[bold {border_color}]📋 Command Output ({status_text})[/bold {border_color}]",
-            border_style=border_color,
-            expand=False
-        ))
-        
-        return f"Exit Code: {exit_code}\n\nSTDOUT:\n{stdout_str}\n\nSTDERR:\n{stderr_str}"
+            status_text = "[green]Success (0)[/green]" if exit_code == 0 else f"[red]Failed ({exit_code})[/red]"
+            border_color = "green" if exit_code == 0 else "red"
+            console.print(Panel(
+                "[italic dim]Interactive command finished.[/italic dim]",
+                title=f"[bold {border_color}]📋 Command Output ({status_text})[/bold {border_color}]",
+                border_style=border_color,
+                expand=False
+            ))
+            return f"Exit Code: {exit_code}\nInteractive command completed."
+        else:
+            # Non-interactive mode: capture stdout/stderr via pipes
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=60,
+                env=os.environ.copy()
+            )
+            
+            stdout_str = safe_decode(result.stdout)
+            stderr_str = safe_decode(result.stderr)
+            exit_code = result.returncode
+            
+            # 4. Display Output Panel
+            status_text = "[green]Success (0)[/green]" if exit_code == 0 else f"[red]Failed ({exit_code})[/red]"
+            border_color = "green" if exit_code == 0 else "red"
+            
+            output_content = []
+            if stdout_str.strip():
+                output_content.append(f"[bold]Standard Output:[/bold]\n{stdout_str.strip()}")
+            if stderr_str.strip():
+                output_content.append(f"[bold red]Standard Error:[/bold]\n{stderr_str.strip()}")
+            if not stdout_str.strip() and not stderr_str.strip():
+                output_content.append("[italic dim]No output received.[/italic dim]")
+                
+            console.print(Panel(
+                "\n\n".join(output_content),
+                title=f"[bold {border_color}]📋 Command Output ({status_text})[/bold {border_color}]",
+                border_style=border_color,
+                expand=False
+            ))
+            
+            return f"Exit Code: {exit_code}\n\nSTDOUT:\n{stdout_str}\n\nSTDERR:\n{stderr_str}"
         
     except subprocess.TimeoutExpired:
         console.print("[red]❌ Command timed out after 60 seconds.[/red]")
@@ -911,7 +948,10 @@ def main():
                 
                 # Check for exit commands
                 if user_input.strip().lower() in ("exit", "quit"):
-                    console.print("[green]Goodbye![/green]")
+                    console.print("[green]👋 Goodbye![/green]")
+                    for i in range(5, 0, -1):
+                        console.print(f"[dim]Closing in {i}...[/dim]", end="\r")
+                        time.sleep(1)
                     break
                     
                 # Check for /model slash command
@@ -941,7 +981,10 @@ def main():
                 messages.append({"role": "user", "content": processed_input})
                 run_agent_turn(client, messages)
             except (KeyboardInterrupt, EOFError):
-                console.print("\n[green]Goodbye![/green]")
+                console.print("\n[green]👋 Goodbye![/green]")
+                for i in range(5, 0, -1):
+                    console.print(f"[dim]Closing in {i}...[/dim]", end="\r")
+                    time.sleep(1)
                 break
             except Exception as e:
                 console.print(f"[red]Error in chat loop: {str(e)}[/red]")
@@ -950,7 +993,10 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        console.print("\n[green]Goodbye![/green]")
+        console.print("\n[green]👋 Goodbye![/green]")
+        for i in range(5, 0, -1):
+            console.print(f"[dim]Closing in {i}...[/dim]", end="\r")
+            time.sleep(1)
         try:
             sys.exit(0)
         except SystemExit:
