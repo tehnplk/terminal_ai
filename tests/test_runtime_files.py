@@ -27,6 +27,16 @@ class RuntimeFilesTests(unittest.TestCase):
         self.assertNotIn("('system_prompt.md', '.')", spec)
         self.assertIn("copyfile('system_prompt.md', 'dist/system_prompt.md')", spec)
 
+    def test_playwright_config_lives_in_config_directory(self):
+        from tools import web_cli
+
+        config_path = web_cli.get_playwright_config_path()
+
+        self.assertEqual(
+            os.path.normpath(os.path.join(os.getcwd(), "config", "playwright_config.json")),
+            os.path.normpath(config_path),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

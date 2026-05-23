@@ -158,11 +158,13 @@ def get_playwright_config_path():
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
     else:
-        exe_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(exe_dir, "playwright_config.json")
+        exe_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_dir = os.path.join(exe_dir, "config")
+    config_path = os.path.join(config_dir, "playwright_config.json")
     
     if not os.path.exists(config_path):
         try:
+            os.makedirs(config_dir, exist_ok=True)
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump({
                     "browser": {

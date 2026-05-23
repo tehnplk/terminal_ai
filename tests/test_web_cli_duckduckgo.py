@@ -1,6 +1,6 @@
 import unittest
 
-import web_cli
+from tools import web_cli
 
 
 class DuckDuckGoSearchTests(unittest.TestCase):
