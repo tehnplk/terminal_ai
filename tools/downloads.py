@@ -51,6 +51,17 @@ def filename_from_url(url: str) -> str:
     return filename or "downloaded-file"
 
 
+def quote_download_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url.strip())
+    if not parsed.scheme or not parsed.netloc:
+        return url
+
+    safe_path = urllib.parse.quote(urllib.parse.unquote(parsed.path), safe="/%")
+    safe_query = urllib.parse.quote(urllib.parse.unquote(parsed.query), safe="=&?/:+,%")
+    safe_fragment = urllib.parse.quote(urllib.parse.unquote(parsed.fragment), safe="")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, safe_path, safe_query, safe_fragment))
+
+
 def unique_download_path(download_dir: str, filename: str) -> str:
     root, ext = os.path.splitext(filename)
     candidate = os.path.join(download_dir, filename)
@@ -77,8 +88,9 @@ def download_file(url: str, filename: str = None) -> str:
         download_dir = get_download_dir()
         os.makedirs(download_dir, exist_ok=True)
 
+        request_url = quote_download_url(url)
         request = urllib.request.Request(
-            url,
+            request_url,
             headers={
                 "User-Agent": "Tenz-AI/1.0 (+https://openrouter.ai)",
             },

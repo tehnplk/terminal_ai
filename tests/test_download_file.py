@@ -7,6 +7,7 @@ import threading
 import unittest
 
 import tools
+from tools.downloads import quote_download_url
 
 
 class DownloadFileTests(unittest.TestCase):
@@ -64,6 +65,16 @@ class DownloadFileTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 tools.set_cwd(original_cwd)
+
+    def test_quote_download_url_percent_encodes_unicode_path_and_query(self):
+        url = "https://plkhealth.moph.go.th/www/wp-content/uploads/2026/03/ประกาศรับสมัครฯ-ลว.13-มี.ค.69.pdf?ชื่อ=ทดสอบ"
+
+        quoted = quote_download_url(url)
+
+        self.assertTrue(quoted.startswith("https://plkhealth.moph.go.th/www/wp-content/uploads/2026/03/"))
+        self.assertIn("%E0%B8%9B", quoted)
+        self.assertIn("%E0%B8%8A%E0%B8%B7%E0%B9%88%E0%B8%AD=", quoted)
+        self.assertNotIn("ประกาศ", quoted)
 
 
 if __name__ == "__main__":
