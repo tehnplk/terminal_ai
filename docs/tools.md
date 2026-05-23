@@ -142,7 +142,7 @@ Returns the user's approximate current location based on public IP geolocation. 
 
 Parameters: none.
 
-### `get_current_time`
+### `get_current_date_time`
 
 Returns the current date and time in the Asia/Bangkok timezone, UTC+7.
 

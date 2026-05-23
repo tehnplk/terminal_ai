@@ -43,6 +43,18 @@ class RuntimeFilesTests(unittest.TestCase):
         self.assertLess(len(output), main.MAX_TOOL_MESSAGE_CHARS + 500)
         self.assertIn("TRUNCATED TOOL OUTPUT from example_tool", output)
 
+    def test_current_date_time_context_is_added_from_tool(self):
+        messages = [{"role": "system", "content": "base"}]
+
+        with mock.patch.dict(main.available_functions, {
+            "get_current_date_time": lambda: "Current date and time in Asia/Bangkok: 2026-05-23 12:34:56 UTC+07:00"
+        }):
+            main.append_current_date_time_context(messages)
+
+        self.assertEqual("system", messages[-1]["role"])
+        self.assertIn("get_current_date_time", messages[-1]["content"])
+        self.assertIn("2026-05-23 12:34:56", messages[-1]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()

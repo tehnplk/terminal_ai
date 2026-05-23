@@ -3,7 +3,7 @@
 from datetime import datetime, timezone, timedelta
 
 
-def get_current_time() -> str:
+def get_current_date_time() -> str:
     """
     Returns the current date and time in the Asia/Bangkok timezone (UTC+7).
     """

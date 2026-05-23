@@ -6,7 +6,7 @@ from .web import web_search, web_fetch, web_browser_open, web_browser_action, we
 from .documents import create_docx_file, create_xlsx_file, create_html_file
 from .media import generate_image
 from .location import current_location
-from .time_tools import get_current_time
+from .time_tools import get_current_date_time
 
 
 available_functions = {
@@ -25,7 +25,7 @@ available_functions = {
     "create_html_file": create_html_file,
     "generate_image": generate_image,
     "current_location": current_location,
-    "get_current_time": get_current_time,
+    "get_current_date_time": get_current_date_time,
 }
 
 
@@ -380,7 +380,7 @@ tools_schema = [
     {
         "type": "function",
         "function": {
-            "name": "get_current_time",
+            "name": "get_current_date_time",
             "description": "Returns the current date and time in the Asia/Bangkok timezone (UTC+7).",
             "parameters": {
                 "type": "object",

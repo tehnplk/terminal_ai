@@ -244,6 +244,21 @@ def process_prompt_mentions(prompt: str, cwd: str) -> str:
 MAX_TOOL_MESSAGE_CHARS = 24000
 
 
+def append_current_date_time_context(messages: list) -> None:
+    """Adds current date/time context from the get_current_date_time tool before each agent turn."""
+    try:
+        current_date_time = available_functions["get_current_date_time"]()
+    except Exception as e:
+        current_date_time = f"Error getting current date/time: {str(e)}"
+    messages.append({
+        "role": "system",
+        "content": (
+            "Current date/time for this turn from tool `get_current_date_time`: "
+            f"{current_date_time}"
+        ),
+    })
+
+
 def limit_tool_output_for_context(tool_name: str, output: str) -> str:
     """Keeps tool responses small enough to send back through the model context."""
     if output is None:
@@ -264,6 +279,7 @@ def run_agent_turn(client: OpenAI, messages: list):
     """Executes a single agent turn, handling potential recursive tool calling loops."""
     global cwd
     initial_length = len(messages) - 1
+    append_current_date_time_context(messages)
     while True:
         try:
             # Call OpenRouter API with a nice spinner

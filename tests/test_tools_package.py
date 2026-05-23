@@ -44,6 +44,20 @@ class ToolsPackageTests(unittest.TestCase):
         self.assertEqual([], schema["parameters"].get("required", []))
         self.assertEqual({}, schema["parameters"]["properties"])
 
+    def test_tools_package_exports_current_date_time_tool(self):
+        import tools
+
+        self.assertIn("get_current_date_time", tools.available_functions)
+        self.assertNotIn("get_current_time", tools.available_functions)
+        self.assertTrue(any(
+            item["function"]["name"] == "get_current_date_time"
+            for item in tools.tools_schema
+        ))
+        self.assertFalse(any(
+            item["function"]["name"] == "get_current_time"
+            for item in tools.tools_schema
+        ))
+
     def test_tools_package_exports_grep_tool(self):
         import tools
 

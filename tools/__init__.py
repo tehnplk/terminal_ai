@@ -13,7 +13,7 @@ from .web import web_search, web_fetch, web_browser_open, web_browser_action, we
 from .documents import create_docx_file, create_xlsx_file, create_html_file
 from .media import generate_image
 from .location import current_location
-from .time_tools import get_current_time
+from .time_tools import get_current_date_time
 from .registry import available_functions, tools_schema
 
 __all__ = [
@@ -39,7 +39,7 @@ __all__ = [
     "create_html_file",
     "generate_image",
     "current_location",
-    "get_current_time",
+    "get_current_date_time",
     "available_functions",
     "tools_schema",
 ]
