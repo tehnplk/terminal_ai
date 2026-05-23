@@ -65,7 +65,7 @@ Required parameters:
 
 ### `web_fetch`
 
-Fetches clean, readable text content from a URL.
+Fetches clean, readable page content from a URL. It tries Crawl4AI first, when available, to produce research-friendly markdown, then falls back to `playwright-cli` for browser-rendered pages.
 
 Required parameters:
 - `url` (`string`): URL to fetch.

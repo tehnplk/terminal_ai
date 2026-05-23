@@ -1,6 +1,7 @@
 import sys
 import os
 import argparse
+import asyncio
 import urllib.request
 import urllib.parse
 import json
@@ -284,6 +285,53 @@ def search_web(query):
     return "No results found."
 
 
+async def _fetch_with_crawl4ai_async(url):
+    try:
+        from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
+        from crawl4ai.content_filter_strategy import PruningContentFilter
+        from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+    except ImportError as e:
+        raise RuntimeError("Crawl4AI is not installed in the current uv environment.") from e
+
+    config = CrawlerRunConfig(
+        markdown_generator=DefaultMarkdownGenerator(
+            content_filter=PruningContentFilter(
+                threshold=0.45,
+                threshold_type="dynamic",
+                min_word_threshold=5,
+            ),
+            options={"ignore_links": False},
+        )
+    )
+
+    async with AsyncWebCrawler() as crawler:
+        result = await crawler.arun(url=url, config=config)
+
+    if not getattr(result, "success", False):
+        error_message = getattr(result, "error_message", "Crawl4AI could not fetch the page.")
+        raise RuntimeError(error_message)
+
+    markdown = getattr(result, "markdown", "")
+    candidates = []
+    if isinstance(markdown, str):
+        candidates.append(markdown)
+    else:
+        candidates.extend([
+            getattr(markdown, "fit_markdown", ""),
+            getattr(markdown, "raw_markdown", ""),
+        ])
+
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+
+    raise RuntimeError("Crawl4AI returned no readable markdown content.")
+
+
+def fetch_with_crawl4ai(url):
+    return asyncio.run(_fetch_with_crawl4ai_async(url))
+
+
 def fetch_with_playwright(url):
     config_path = get_playwright_config_path()
     try:
@@ -343,28 +391,27 @@ def fetch_with_urllib(url):
 
 
 def fetch_web(url):
-    # Try urllib first for high performance
+    last_error = None
+
+    # Prefer Crawl4AI because it returns cleaner markdown for research-oriented fetching.
     try:
-        text = fetch_with_urllib(url)
-        # Check if we got substantial content (not a tiny block/stub page)
-        if len(text.strip()) > 300:
+        text = fetch_with_crawl4ai(url)
+        if text.strip():
             return text
     except Exception as e:
-        pass
+        last_error = e
 
-    # Fallback to playwright-cli
+    # Fallback to playwright-cli for pages Crawl4AI cannot process.
     try:
         text = fetch_with_playwright(url)
         if text.strip():
             return text
     except Exception as e:
-        pass
+        last_error = e
 
-    # Final fallback attempt with urllib
-    try:
-        return fetch_with_urllib(url)
-    except Exception as e:
-        return f"Error fetching page content: {str(e)}"
+    if last_error:
+        return f"Error fetching page content: {str(last_error)}"
+    return "Error fetching page content."
 
 
 def main():
