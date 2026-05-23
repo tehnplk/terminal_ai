@@ -13,6 +13,7 @@ wheels/
 # PyInstaller build artifacts
 build/
 dist/
+dist_latest/
 *.spec
 !TerminalAI.spec
 
@@ -21,6 +22,7 @@ dist/
 
 # Local generated artifacts and scratch files
 artifact/
+download/
 scratch/
 *.log
 doc_*.docx

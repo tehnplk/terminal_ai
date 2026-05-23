@@ -14,6 +14,7 @@ from .documents import create_docx_file, create_xlsx_file, create_html_file
 from .media import generate_image
 from .location import current_location
 from .time_tools import get_current_date_time
+from .downloads import download_file
 from .registry import available_functions, tools_schema
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "generate_image",
     "current_location",
     "get_current_date_time",
+    "download_file",
     "available_functions",
     "tools_schema",
 ]

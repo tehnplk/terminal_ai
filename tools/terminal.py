@@ -11,6 +11,7 @@ from rich.prompt import Confirm
 from rich.syntax import Syntax
 
 from . import runtime
+from .time_tools import get_current_date_time
 
 
 MAX_COMMAND_OUTPUT_CHARS = 20000
@@ -57,6 +58,19 @@ def compact_stdout_for_agent(command: str, stdout: str) -> str:
         except (json.JSONDecodeError, TypeError, AttributeError):
             pass
     return _truncate_text(stdout, MAX_COMMAND_OUTPUT_CHARS)
+
+
+def get_datetime_tool_redirect(command: str) -> str | None:
+    """Returns a safe date/time answer for raw shell commands that can become interactive on Windows."""
+    command_clean = command.strip().lower()
+    if command_clean not in {"date", "time"}:
+        return None
+
+    return (
+        "Blocked raw terminal command because Windows `date`/`time` can prompt to change the system clock. "
+        "Use the `get_current_date_time` tool instead.\n\n"
+        f"{get_current_date_time()}"
+    )
 
 
 def update_cwd_from_command(command: str):
@@ -122,6 +136,10 @@ def execute_terminal_command(command: str) -> str:
     Args:
         command: The terminal command to run.
     """
+    datetime_redirect = get_datetime_tool_redirect(command)
+    if datetime_redirect:
+        runtime.console.print("[yellow]Using get_current_date_time instead of raw terminal date/time command.[/yellow]")
+        return datetime_redirect
     
     # 1. Print Proposed Command Panel
     runtime.console.print()

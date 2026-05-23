@@ -70,6 +70,16 @@ Fetches clean, readable page content from a URL. It tries Crawl4AI first, when a
 Required parameters:
 - `url` (`string`): URL to fetch.
 
+### `download_file`
+
+Downloads a file from a URL and saves it into the `download` folder next to the current workspace/app. The output filename is sanitized so it cannot escape the `download` folder.
+
+Required parameters:
+- `url` (`string`): URL of the file to download.
+
+Optional parameters:
+- `filename` (`string`): Output filename. Directory components are ignored.
+
 ### `web_browser_open`
 
 Opens a URL in a Playwright browser session and returns a structured page snapshot.

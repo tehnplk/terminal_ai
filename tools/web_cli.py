@@ -285,6 +285,18 @@ def search_web(query):
     return "No results found."
 
 
+def get_runtime_base_dir():
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def configure_sidecar_playwright_browsers():
+    sidecar_path = os.path.join(get_runtime_base_dir(), "ms-playwright")
+    if os.path.isdir(sidecar_path) and not os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = sidecar_path
+
+
 async def _fetch_with_crawl4ai_async(url):
     try:
         from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
@@ -292,6 +304,8 @@ async def _fetch_with_crawl4ai_async(url):
         from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
     except ImportError as e:
         raise RuntimeError("Crawl4AI is not installed in the current uv environment.") from e
+
+    configure_sidecar_playwright_browsers()
 
     config = CrawlerRunConfig(
         markdown_generator=DefaultMarkdownGenerator(

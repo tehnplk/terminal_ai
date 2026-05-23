@@ -75,6 +75,21 @@ class ToolsPackageTests(unittest.TestCase):
         self.assertIn("case_sensitive", schema["parameters"]["properties"])
         self.assertIn("max_results", schema["parameters"]["properties"])
 
+    def test_tools_package_exports_download_file_tool(self):
+        import tools
+
+        self.assertIn("download_file", tools.available_functions)
+
+        schema = next(
+            item["function"]
+            for item in tools.tools_schema
+            if item["function"]["name"] == "download_file"
+        )
+
+        self.assertEqual(["url"], schema["parameters"]["required"])
+        self.assertIn("url", schema["parameters"]["properties"])
+        self.assertIn("filename", schema["parameters"]["properties"])
+
     def test_grep_searches_absolute_paths_outside_current_directory(self):
         import os
         import tools
@@ -127,6 +142,15 @@ class ToolsPackageTests(unittest.TestCase):
         self.assertNotIn("PYTHONEXECUTABLE", env)
         self.assertNotIn("UV_INTERNAL__PYTHONHOME", env)
         self.assertEqual("kept", env["NORMAL_VAR"])
+
+    def test_terminal_raw_date_time_commands_are_redirected_to_date_time_tool(self):
+        from tools.terminal import get_datetime_tool_redirect
+
+        self.assertIn("get_current_date_time", get_datetime_tool_redirect("date"))
+        self.assertIn("get_current_date_time", get_datetime_tool_redirect("time"))
+        self.assertIn("get_current_date_time", get_datetime_tool_redirect("  DATE  "))
+        self.assertIsNone(get_datetime_tool_redirect("date /t"))
+        self.assertIsNone(get_datetime_tool_redirect("Get-Date"))
 
     def test_terminal_compacts_notebooklm_query_json_for_agent_context(self):
         from tools.terminal import compact_stdout_for_agent

@@ -1,4 +1,7 @@
 import unittest
+import os
+import tempfile
+from unittest import mock
 
 from tools import web_cli
 
@@ -142,6 +145,24 @@ class DuckDuckGoSearchTests(unittest.TestCase):
 
         self.assertEqual(result, "browser-rendered content")
         self.assertEqual(calls, ["crawl4ai", "playwright"])
+
+    def test_configure_sidecar_playwright_browsers_uses_runtime_browser_folder(self):
+        original_value = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            browser_dir = os.path.join(runtime_dir, "ms-playwright")
+            os.makedirs(browser_dir)
+
+            os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+            try:
+                with mock.patch.object(web_cli, "get_runtime_base_dir", return_value=runtime_dir):
+                    web_cli.configure_sidecar_playwright_browsers()
+
+                self.assertEqual(os.environ.get("PLAYWRIGHT_BROWSERS_PATH"), browser_dir)
+            finally:
+                if original_value is None:
+                    os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)
+                else:
+                    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = original_value
 
 
 if __name__ == "__main__":

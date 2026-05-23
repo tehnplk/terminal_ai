@@ -25,7 +25,10 @@ class RuntimeFilesTests(unittest.TestCase):
 
         self.assertIn("datas = []", spec)
         self.assertNotIn("('system_prompt.md', '.')", spec)
-        self.assertIn("copyfile('system_prompt.md', 'dist/system_prompt.md')", spec)
+        self.assertIn("dist_root = os.path.abspath(DISTPATH", spec)
+        self.assertIn("copyfile('system_prompt.md', os.path.join(dist_root, 'system_prompt.md'))", spec)
+        self.assertIn("copyfile(os.path.join('config', 'playwright_config.json')", spec)
+        self.assertNotIn("copyfile('.env',", spec)
 
     def test_playwright_config_lives_in_config_directory(self):
         from tools import web_cli

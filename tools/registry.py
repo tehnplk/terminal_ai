@@ -7,6 +7,7 @@ from .documents import create_docx_file, create_xlsx_file, create_html_file
 from .media import generate_image
 from .location import current_location
 from .time_tools import get_current_date_time
+from .downloads import download_file
 
 
 available_functions = {
@@ -26,6 +27,7 @@ available_functions = {
     "generate_image": generate_image,
     "current_location": current_location,
     "get_current_date_time": get_current_date_time,
+    "download_file": download_file,
 }
 
 
@@ -385,6 +387,27 @@ tools_schema = [
             "parameters": {
                 "type": "object",
                 "properties": {}
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "download_file",
+            "description": "Downloads a file from a URL and saves it into the download folder next to the current workspace/app.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the file to download."
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "Optional output filename. Directory components are ignored so the file always stays inside the download folder."
+                    }
+                },
+                "required": ["url"]
             }
         }
     }
