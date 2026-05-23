@@ -37,6 +37,12 @@ class RuntimeFilesTests(unittest.TestCase):
             os.path.normpath(config_path),
         )
 
+    def test_tool_output_is_limited_before_reentering_model_context(self):
+        output = main.limit_tool_output_for_context("example_tool", "x" * (main.MAX_TOOL_MESSAGE_CHARS + 50))
+
+        self.assertLess(len(output), main.MAX_TOOL_MESSAGE_CHARS + 500)
+        self.assertIn("TRUNCATED TOOL OUTPUT from example_tool", output)
+
 
 if __name__ == "__main__":
     unittest.main()

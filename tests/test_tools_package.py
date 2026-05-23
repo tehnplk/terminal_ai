@@ -1,5 +1,6 @@
 import unittest
 import tempfile
+import json
 
 
 class ToolsPackageTests(unittest.TestCase):
@@ -91,6 +92,48 @@ class ToolsPackageTests(unittest.TestCase):
             self.assertIn(target_file, result)
         finally:
             tools.set_cwd(original_cwd)
+
+    def test_terminal_subprocess_env_removes_parent_python_runtime_vars(self):
+        import os
+        from unittest import mock
+
+        from tools.terminal import build_subprocess_env
+
+        with mock.patch.dict(os.environ, {
+            "PYTHONHOME": "bad-home",
+            "PYTHONPATH": "bad-path",
+            "PYTHONEXECUTABLE": "bad-exe",
+            "UV_INTERNAL__PYTHONHOME": "bad-uv-home",
+            "NORMAL_VAR": "kept",
+        }):
+            env = build_subprocess_env()
+
+        self.assertNotIn("PYTHONHOME", env)
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("PYTHONEXECUTABLE", env)
+        self.assertNotIn("UV_INTERNAL__PYTHONHOME", env)
+        self.assertEqual("kept", env["NORMAL_VAR"])
+
+    def test_terminal_compacts_notebooklm_query_json_for_agent_context(self):
+        from tools.terminal import compact_stdout_for_agent
+
+        raw = json.dumps({
+            "value": {
+                "answer": "Short answer from NotebookLM.",
+                "conversation_id": "conversation-1",
+                "sources_used": ["source-1"],
+                "citations": {"1": "source-1"},
+                "references": [{"cited_text": "x" * 50000}],
+            }
+        })
+
+        result = compact_stdout_for_agent("nlm notebook query abc question", raw)
+
+        self.assertIn("Short answer from NotebookLM.", result)
+        self.assertIn("Conversation ID: conversation-1", result)
+        self.assertIn("Sources used: source-1", result)
+        self.assertIn("Raw references were omitted", result)
+        self.assertNotIn("x" * 100, result)
 
     def test_main_uses_tools_package_registry(self):
         import main

@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+import json
 
 from rich.markup import escape
 from rich.panel import Panel
@@ -10,6 +11,52 @@ from rich.prompt import Confirm
 from rich.syntax import Syntax
 
 from . import runtime
+
+
+MAX_COMMAND_OUTPUT_CHARS = 20000
+MAX_DISPLAY_OUTPUT_CHARS = 12000
+
+
+def build_subprocess_env() -> dict:
+    """Builds a clean environment for child processes launched from TerminalAI."""
+    env = os.environ.copy()
+    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "UV_INTERNAL__PYTHONHOME"):
+        env.pop(key, None)
+    return env
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    return f"{text[:limit]}\n\n[TRUNCATED: omitted {omitted} characters. Re-run with a narrower command or redirect output to a file if you need the full result.]"
+
+
+def compact_stdout_for_agent(command: str, stdout: str) -> str:
+    """Compacts noisy command output before it is sent back to the model."""
+    command_lower = command.strip().lower()
+    if command_lower.startswith("nlm "):
+        try:
+            data = json.loads(stdout)
+            value = data.get("value") if isinstance(data, dict) else None
+            if isinstance(value, dict) and "answer" in value:
+                lines = [
+                    "NotebookLM result:",
+                    str(value.get("answer", "")).strip(),
+                ]
+                if value.get("conversation_id"):
+                    lines.append(f"Conversation ID: {value['conversation_id']}")
+                sources = value.get("sources_used")
+                if sources:
+                    lines.append(f"Sources used: {', '.join(str(item) for item in sources)}")
+                citations = value.get("citations")
+                if isinstance(citations, dict):
+                    lines.append(f"Citation count: {len(citations)}")
+                lines.append("Raw references were omitted to keep the model context small.")
+                return "\n".join(line for line in lines if line)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+    return _truncate_text(stdout, MAX_COMMAND_OUTPUT_CHARS)
 
 
 def update_cwd_from_command(command: str):
@@ -127,7 +174,7 @@ def execute_terminal_command(command: str) -> str:
                     command,
                     shell=True,
                     cwd=runtime.cwd,
-                    env=os.environ.copy()
+                    env=build_subprocess_env()
                 )
                 process.wait(timeout=120)
                 exit_code = process.returncode
@@ -159,7 +206,7 @@ def execute_terminal_command(command: str) -> str:
                     cwd=runtime.cwd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    env=os.environ.copy()
+                    env=build_subprocess_env()
                 )
                 stdout_bytes, stderr_bytes = process.communicate(timeout=60)
                 stdout_str = runtime.safe_decode(stdout_bytes)
@@ -192,12 +239,16 @@ def execute_terminal_command(command: str) -> str:
             # 4. Display Output Panel
             status_text = "[green]Success (0)[/green]" if exit_code == 0 else f"[red]Failed ({exit_code})[/red]"
             border_color = "green" if exit_code == 0 else "red"
+            agent_stdout = compact_stdout_for_agent(command, stdout_str)
+            agent_stderr = _truncate_text(stderr_str, MAX_COMMAND_OUTPUT_CHARS)
+            display_stdout = _truncate_text(stdout_str, MAX_DISPLAY_OUTPUT_CHARS)
+            display_stderr = _truncate_text(stderr_str, MAX_DISPLAY_OUTPUT_CHARS)
             
             output_content = []
-            if stdout_str.strip():
-                output_content.append(f"[bold]Standard Output:[/bold]\n{escape(stdout_str.strip())}")
-            if stderr_str.strip():
-                output_content.append(f"[bold red]Standard Error:[/bold red]\n{escape(stderr_str.strip())}")
+            if display_stdout.strip():
+                output_content.append(f"[bold]Standard Output:[/bold]\n{escape(display_stdout.strip())}")
+            if display_stderr.strip():
+                output_content.append(f"[bold red]Standard Error:[/bold red]\n{escape(display_stderr.strip())}")
             if not stdout_str.strip() and not stderr_str.strip():
                 output_content.append("[italic dim]No output received.[/italic dim]")
                 
@@ -208,7 +259,7 @@ def execute_terminal_command(command: str) -> str:
                 expand=False
             ))
             
-            return f"Exit Code: {exit_code}\n\nSTDOUT:\n{stdout_str}\n\nSTDERR:\n{stderr_str}"
+            return f"Exit Code: {exit_code}\n\nSTDOUT:\n{agent_stdout}\n\nSTDERR:\n{agent_stderr}"
         
     except Exception as e:
         runtime.console.print(f"[red]❌ Error running command: {escape(str(e))}[/red]")

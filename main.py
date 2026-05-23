@@ -241,6 +241,25 @@ def process_prompt_mentions(prompt: str, cwd: str) -> str:
     return prompt + context_block
 
 
+MAX_TOOL_MESSAGE_CHARS = 24000
+
+
+def limit_tool_output_for_context(tool_name: str, output: str) -> str:
+    """Keeps tool responses small enough to send back through the model context."""
+    if output is None:
+        return ""
+    if not isinstance(output, str):
+        output = str(output)
+    if len(output) <= MAX_TOOL_MESSAGE_CHARS:
+        return output
+    omitted = len(output) - MAX_TOOL_MESSAGE_CHARS
+    return (
+        output[:MAX_TOOL_MESSAGE_CHARS]
+        + f"\n\n[TRUNCATED TOOL OUTPUT from {tool_name}: omitted {omitted} characters. "
+        "Ask for a narrower query, line range, JSON field, or redirect full output to a file.]"
+    )
+
+
 def run_agent_turn(client: OpenAI, messages: list):
     """Executes a single agent turn, handling potential recursive tool calling loops."""
     global cwd
@@ -321,6 +340,7 @@ def run_agent_turn(client: OpenAI, messages: list):
                 if fn_name in available_functions:
                     fn_to_call = available_functions[fn_name]
                     tool_output = fn_to_call(**fn_args)
+                    tool_output = limit_tool_output_for_context(fn_name, tool_output)
                     cwd = tools.get_cwd()
                 else:
                     tool_output = f"Error: Tool '{fn_name}' not found."
