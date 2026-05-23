@@ -17,7 +17,7 @@ def current_location() -> str:
     try:
         request = urllib.request.Request(
             url,
-            headers={"User-Agent": "terminal-ai/0.1"},
+            headers={"User-Agent": "tenz-ai/0.1"},
         )
         with urllib.request.urlopen(request, timeout=10) as response:
             raw = response.read().decode("utf-8", errors="replace")

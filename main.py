@@ -276,8 +276,8 @@ def run_agent_turn(client: OpenAI, messages: list):
                     tool_choice="auto",
                     max_tokens=max_tokens,
                     extra_headers={
-                        "HTTP-Referer": "https://github.com/google-gemini/terminal-ai",
-                        "X-Title": "TerminalAI",
+                        "HTTP-Referer": "https://github.com/google-gemini/tenz-ai",
+                        "X-Title": "Tenz-AI",
                     }
                 )
                 
@@ -306,7 +306,7 @@ def run_agent_turn(client: OpenAI, messages: list):
                     console.print()
                     console.print(Panel(
                         Markdown(response_message.content),
-                        title="[bold green]🤖 TerminalAI[/bold green]",
+                        title="[bold green]🤖 Tenz-AI[/bold green]",
                         border_style="green",
                         expand=False
                     ))
@@ -427,7 +427,7 @@ def default_runtime_file_path(filename: str) -> str:
     return os.path.join(get_app_dir(), filename)
 
 def main():
-    parser = argparse.ArgumentParser(description="Terminal AI Agent - A command line assistant using OpenRouter.")
+    parser = argparse.ArgumentParser(description="Tenz-AI - A command line assistant using OpenRouter.")
     parser.add_argument("prompt", nargs="*", help="Initial prompt/command for the AI agent.")
     parser.add_argument("-y", "--yes", action="store_true", help="Auto-approve all terminal commands and file writes.")
     args = parser.parse_args()
@@ -445,7 +445,7 @@ def main():
     # Print welcome banner
     console.print()
     console.print(Align.center(Panel(
-        Text("⚡ TERMINAL AI AGENT (OpenRouter) ⚡\n[dim]A smart assistant with command execution capabilities[/dim]", justify="center", style="bold cyan"),
+        Text("⚡ TENZ-AI (OpenRouter) ⚡\n[dim]A smart assistant with command execution capabilities[/dim]", justify="center", style="bold cyan"),
         border_style="cyan",
         expand=False
     )))
@@ -504,7 +504,7 @@ def main():
         console.print(f"[red]Warning: Could not load system_prompt.md: {escape(str(e))}[/red]")
         console.print("[yellow]Falling back to default built-in system prompt...[/yellow]")
         system_instruction = (
-            "You are TerminalAI, an advanced agentic coding and system administration assistant.\n"
+            "You are Tenz-AI, an advanced agentic coding and system administration assistant.\n"
             f"You are currently running on operating system: {os_info} (Shell: {shell_info}).\n"
             "You have direct access to the user's terminal through the `execute_terminal_command` tool, "
             "and direct file system access through `read_text_file`, `write_text_file`, and `edit_text_file`.\n"
@@ -525,7 +525,7 @@ def main():
         run_agent_turn(client, messages)
     else:
         # Run in interactive REPL mode
-        console.print("\n[green]Welcome to TerminalAI! Type your instruction below (or 'exit' / 'quit' to exit).[/green]")
+        console.print("\n[green]Welcome to Tenz-AI! Type your instruction below (or 'exit' / 'quit' to exit).[/green]")
         console.print(f"[bold cyan]Selected Model: {OPENROUTER_MODEL}[/bold cyan]")
         if auto_approve:
             console.print("[bold red]⚠️ Auto-approve mode is ENABLED. Commands/Writes will run without confirmation.[/bold red]")
@@ -586,7 +586,7 @@ def main():
                     messages = [
                         {"role": "system", "content": system_instruction}
                     ]
-                    console.print("\n[green]Welcome to TerminalAI! Chat context has been reset.[/green]")
+                    console.print("\n[green]Welcome to Tenz-AI! Chat context has been reset.[/green]")
                     console.print(f"[bold cyan]Active Model: {OPENROUTER_MODEL}[/bold cyan]")
                     if auto_approve:
                         console.print("[bold red]⚠️ Auto-approve mode is ENABLED. Commands/Writes will run without confirmation.[/bold red]")

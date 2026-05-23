@@ -18,7 +18,7 @@ MAX_DISPLAY_OUTPUT_CHARS = 12000
 
 
 def build_subprocess_env() -> dict:
-    """Builds a clean environment for child processes launched from TerminalAI."""
+    """Builds a clean environment for child processes launched from Tenz-AI."""
     env = os.environ.copy()
     for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE", "UV_INTERNAL__PYTHONHOME"):
         env.pop(key, None)
