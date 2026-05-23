@@ -276,6 +276,22 @@ def limit_tool_output_for_context(tool_name: str, output: str) -> str:
     )
 
 
+def parse_tool_arguments(tool_name: str, raw_arguments: str) -> tuple[dict, str | None]:
+    """Parses model-provided tool arguments without aborting the whole agent turn."""
+    try:
+        parsed = json.loads(raw_arguments or "{}")
+    except json.JSONDecodeError as e:
+        return {}, (
+            f"Invalid JSON arguments for tool '{tool_name}': {e.msg} "
+            f"(line {e.lineno}, column {e.colno}). "
+            "Retry this tool call with a valid JSON object. "
+            "Escape newlines and quotes inside string values, or use smaller content chunks."
+        )
+    if not isinstance(parsed, dict):
+        return {}, f"Invalid arguments for tool '{tool_name}': expected a JSON object."
+    return parsed, None
+
+
 def run_agent_turn(client: OpenAI, messages: list):
     """Executes a single agent turn, handling potential recursive tool calling loops."""
     global cwd
@@ -352,9 +368,12 @@ def run_agent_turn(client: OpenAI, messages: list):
             # Loop and execute tool calls
             for tool_call in tool_calls:
                 fn_name = tool_call.function.name
-                fn_args = json.loads(tool_call.function.arguments)
+                fn_args, argument_error = parse_tool_arguments(fn_name, tool_call.function.arguments)
                 
-                if fn_name in available_functions:
+                if argument_error:
+                    tool_output = argument_error
+                    console.print(f"[yellow]{escape(argument_error)}[/yellow]")
+                elif fn_name in available_functions:
                     fn_to_call = available_functions[fn_name]
                     tool_output = fn_to_call(**fn_args)
                     tool_output = limit_tool_output_for_context(fn_name, tool_output)
