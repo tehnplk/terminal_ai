@@ -1,7 +1,7 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
+build*/
 dist/
 wheels/
 *.egg-info
@@ -11,7 +11,7 @@ wheels/
 .env
 
 # PyInstaller build artifacts
-build/
+build*/
 dist/
 dist_latest/
 *.spec

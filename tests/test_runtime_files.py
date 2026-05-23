@@ -58,6 +58,23 @@ class RuntimeFilesTests(unittest.TestCase):
         self.assertIn("get_current_date_time", messages[-1]["content"])
         self.assertIn("2026-05-23 12:34:56", messages[-1]["content"])
 
+    def test_model_choices_include_openai_gpt_oss_120b_paid_variant(self):
+        import model_choice
+
+        self.assertIn("openai/gpt-oss-120b", model_choice.MODEL_CHOICES)
+        self.assertIn("openai/gpt-oss-120b:free", model_choice.MODEL_CHOICES)
+
+    def test_model_choices_include_openai_gpt_oss_20b(self):
+        import model_choice
+
+        self.assertIn("openai/gpt-oss-20b", model_choice.MODEL_CHOICES)
+
+    def test_model_choices_include_deepseek_v4_flash_paid_variant(self):
+        import model_choice
+
+        self.assertIn("deepseek/deepseek-v4-flash", model_choice.MODEL_CHOICES)
+        self.assertIn("deepseek/deepseek-v4-flash:free", model_choice.MODEL_CHOICES)
+
 
 if __name__ == "__main__":
     unittest.main()

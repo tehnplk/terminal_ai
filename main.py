@@ -8,7 +8,6 @@ import signal
 import platform
 from dotenv import load_dotenv
 from openai import OpenAI
-import questionary
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import HTML
@@ -38,6 +37,8 @@ from rich.markdown import Markdown
 from rich.align import Align
 from rich.markup import escape
 
+from model_choice import DEFAULT_MODEL, select_model_interactive as select_model_interactive_impl
+
 # Initialize Rich Console
 console = Console()
 
@@ -50,7 +51,7 @@ from tools import available_functions, tools_schema
 tools.configure(runtime_console=console, initial_cwd=cwd, approve=False)
 
 auto_approve = False
-OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
+OPENROUTER_MODEL = DEFAULT_MODEL
 
 class PathMentionCompleter(Completer):
     """Custom completer that suggests file/folder paths when typing after '@'."""
@@ -379,47 +380,7 @@ def run_agent_turn(client: OpenAI, messages: list):
             break
 def select_model_interactive() -> str:
     """Helper function to let the user select a model using arrow keys."""
-    choices = [
-        "openai/gpt-oss-120b:free",
-        "arcee-ai/trinity-large-thinking:free",
-        "nvidia/nemotron-3-super-120b-a12b:free",
-        "deepseek/deepseek-v4-flash:free",
-        "minimax/minimax-m2.5:free",
-        "baidu/cobuddy:free",
-        "google/gemma-4-31b-it:free",
-    ]
-    
-    selected = questionary.select(
-        "Select OpenRouter Model (Use arrow keys):",
-        choices=choices,
-        default="openai/gpt-oss-120b:free"
-    ).ask()
-    
-    # If user pressed Ctrl+C or exited questionary, select defaults safely
-    if not selected:
-        console.print("[yellow]No model selected. Defaulting to openai/gpt-oss-120b:free.[/yellow]")
-        selected = "openai/gpt-oss-120b:free"
-        
-    model_choice = selected
-        
-    # Ask to save model to .env
-    save_model = Confirm.ask(f"Would you like to save model choice '{model_choice}' to your .env file?", default=True)
-    if save_model:
-        env_path = find_external_runtime_file(".env") or default_runtime_file_path(".env")
-        # First remove existing OPENROUTER_MODEL lines from .env to avoid duplicates
-        if os.path.exists(env_path):
-            with open(env_path, "r") as f:
-                lines = f.readlines()
-            with open(env_path, "w") as f:
-                for line in lines:
-                    if not line.strip().startswith("OPENROUTER_MODEL="):
-                        f.write(line)
-        # Append new choice
-        with open(env_path, "a") as f:
-            f.write(f"\nOPENROUTER_MODEL={model_choice}\n")
-        console.print(f"[green]Saved model choice to {escape(env_path)}.[/green]")
-        
-    return model_choice
+    return select_model_interactive_impl(console, find_external_runtime_file, default_runtime_file_path)
 
 def get_app_dir() -> str:
     """Returns the directory that owns editable runtime files."""
